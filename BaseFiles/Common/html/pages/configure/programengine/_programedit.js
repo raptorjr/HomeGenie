@@ -23,7 +23,7 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
             $('[data-ui-field=homegenie_panel_button]').addClass('ui-disabled');
         });
         page.on('pagebeforeshow', function (e) {
-            $('#automation_program_scriptcondition').next().css('display', '');
+            $('#automation_program_scriptsetup').next().css('display', '');
             $('#automation_program_scriptsource').next().css('display', '');
             $$.SetTab(1);
             $$.RefreshProgramEditorTitle();
@@ -75,6 +75,10 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
             //
             $('#configure_program_editorcompilecode2').bind('click', function (event) {
                 $$.CompileProgram();
+                return true;
+            });
+            $('#configure_program_editoroptions').bind('click', function (event) {
+                HG.WebApp.ProgramsList.UpdateOptionsPopup();
                 return true;
             });
             //
@@ -254,7 +258,9 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
         isClean = isClean && ($$._CurrentProgram.Name === $('#automation_programname').val());
         isClean = isClean && ($$._CurrentProgram.Description === $('#automation_programdescription').val());
         isClean = isClean && ($$._CurrentProgram.AutoRestartEnabled === $('#automation_program_autorestartenabled').is(':checked') );
-        isClean = isClean && ($$._CurrentProgram.ConditionType === $('#automation_conditiontype').val());
+        if ($$._CurrentProgram.Type.toLowerCase() == 'wizard') {
+            isClean = isClean && ($$._CurrentProgram.ConditionType === $('#automation_conditiontype').val());
+        }
         isClean = isClean && editor1.isClean() && editor2.isClean() && editor3.isClean();
         // TODO: add checking of Wizard type programs Conditions and Commands too
         return isClean;
@@ -274,7 +280,8 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
     };
 
     $$.IsModuleControllable = function (module) {
-        return (module.DeviceType != 'Generic' && module.DeviceType != 'Sensor' && module.DeviceType != 'DoorWindow' && module.DeviceType != 'Temperature');
+        return (module.DeviceType != 'Generic' && module.DeviceType != 'Sensor' && module.DeviceType != 'DoorWindow' && module.DeviceType != 'Temperature')
+            || (module.Address == "RF" || module.Address == "IR");
     };
 
     $$.GetDomainComparableModules = function (domain, showall) {
@@ -360,6 +367,7 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
         $('[id=editprograms_actionmenu_compile]').each(function () {
             $(this).addClass('ui-disabled');
         });
+        $('#configure_program_editoroptions').hide();
         //
         setTimeout(function () {
             HG.Automation.Programs.List(function () {
@@ -390,6 +398,10 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
                         $$._CurrentProgram.ScriptErrors = '';
                     }
                     $$.RefreshProgramEditorTitle();
+                }
+                if (HG.Automation.Programs.HasConfigurationOptions($$._CurrentProgram.Address))
+                {
+                    $('#configure_program_editoroptions').show();
                 }
             });
         }, 500);
@@ -432,6 +444,7 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
                 $.mobile.loading('hide');
                 editor1.markClean();
                 editor2.markClean();
+                editor3.markClean();
                 $('#configure_program_editorcompilecode').removeClass('ui-disabled');
                 $('#configure_program_editorcompilecode2').removeClass('ui-disabled');
                 if (response.trim() != '' && response.trim() != '[]') {
@@ -688,14 +701,21 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
         $('#program_error_button').hide();
         $('#program_error_button2').hide();
         var programblock = $$.SetProgramData();
-        //
-        if ($$._CurrentProgram.Type.toLowerCase() == 'arduino') {
-            // save other opened sketch files before compiling
-            $$.SketchFileSave(function () {
-                $$.UpdateProgram(programblock, false, callback);
-            });
-        } else {
-            $$.UpdateProgram(programblock, true, callback);
+        switch ($$._CurrentProgram.Type.toLowerCase()) {
+            case 'arduino':
+                // save other opened sketch files before compiling
+                $$.SketchFileSave(function () {
+                    $$.UpdateProgram(programblock, false, callback);
+                });
+                break;
+            case 'wizard':
+                programblock.ScriptSource = JSON.stringify({
+                    'ConditionType': $$._CurrentProgram.ConditionType,
+                    'Conditions': $$._CurrentProgram.Conditions,
+                    'Commands': $$._CurrentProgram.Commands
+                });
+            default:
+                $$.UpdateProgram(programblock, true, callback);
         }
     };
     $$.SetProgramData = function () {
@@ -704,7 +724,7 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
         $$._CurrentProgram.Name = $('#automation_programname').val();
         $$._CurrentProgram.Description = $('#automation_programdescription').val();
         $$._CurrentProgram.AutoRestartEnabled = $('#automation_program_autorestartenabled').is(':checked');
-        $$._CurrentProgram.ScriptCondition = editor1.getValue(); //$('#automation_program_scriptcondition').val();
+        $$._CurrentProgram.ScriptSetup = editor1.getValue(); //$('#automation_program_scriptsetup').val();
         $$._CurrentProgram.ScriptSource = editor2.getValue(); //$('#automation_program_scriptsource').val();
         $$._CurrentProgram.ScriptErrors = '';
         $$._CurrentProgram.ConditionType = $('#automation_conditiontype').val();
@@ -716,17 +736,14 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
             'Description': $$._CurrentProgram.Description,
             'AutoRestartEnabled': $$._CurrentProgram.AutoRestartEnabled,
             'IsEnabled': $$._CurrentProgram.IsEnabled,
-            'ScriptCondition': $$._CurrentProgram.ScriptCondition,
-            'ScriptSource': $$._CurrentProgram.ScriptSource,
-            'ConditionType': $$._CurrentProgram.ConditionType,
-            'Conditions': $$._CurrentProgram.Conditions,
-            'Commands': $$._CurrentProgram.Commands
+            'ScriptSetup': $$._CurrentProgram.ScriptSetup,
+            'ScriptSource': $$._CurrentProgram.ScriptSource
         };
         return programblock;
     };
 
     $$.CheckAndRunProgram = function (program) {
-        $$._CurrentProgram.ScriptCondition = editor1.getValue(); //$('#automation_program_scriptcondition').val();
+        $$._CurrentProgram.ScriptSetup = editor1.getValue(); //$('#automation_program_scriptsetup').val();
         $$._CurrentProgram.ScriptSource = editor2.getValue(); //$('#automation_program_scriptsource').val();
         $$._CurrentProgram.ConditionType = $('#automation_conditiontype').val();
         if (!$$.IsClean()) {
@@ -755,7 +772,7 @@ HG.WebApp.ProgramEdit = HG.WebApp.ProgramEdit || new function () {
     };
 
     $$.RunProgram = function (pid, options) {
-        $$._CurrentProgram.ScriptCondition = editor1.getValue(); //$('#automation_program_scriptcondition').val();
+        $$._CurrentProgram.ScriptSetup = editor1.getValue(); //$('#automation_program_scriptsetup').val();
         $$._CurrentProgram.ScriptSource = editor2.getValue(); //$('#automation_program_scriptsource').val();
         $$._CurrentProgram.ConditionType = $('#automation_conditiontype').val();
         //

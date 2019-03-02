@@ -21,12 +21,6 @@
                 <br clear="all" />
                 <label data-locale-id="configure_program_programdescription" for="automation_programdescription">Program Description</label>
                 <textarea id="automation_programdescription" cols="40" rows="3"></textarea>
-                <br clear="all" />
-
-                <div id="autorestartenabled">
-                    <label data-locale-id="configure_program_autorestart" for="automation_program_autorestartenabled">Auto restart program on failure</label>
-                    <input type="checkbox" id="automation_program_autorestartenabled" />
-                </div>
 
                 <br clear="all" />
                 <div class="ui-grid-a">
@@ -37,13 +31,23 @@
                             <option value="CSharp">C# Program</option>
                             <option value="Javascript">Javascript Script</option>
                             <option value="Python">Python Script</option>
-                            <option value="Ruby">Ruby Script</option>
                             <option id="automation_programtype_option_arduino" value="Arduino">Arduino Sketch</option>
                         </select>
                     </div>
                     <div class="ui-block-b">
                         <label data-locale-id="configure_program_programgroup" for="automation_programgroup">Program Group</label>
                         <select id="automation_programgroup"></select>
+                    </div>
+                </div>
+                <div class="ui-grid-a">
+                    <div class="ui-block-a">
+                        <div id="autorestartenabled">
+                            <label data-locale-id="configure_program_autorestart" for="automation_program_autorestartenabled">Auto restart program on failure</label>
+                            <input type="checkbox" id="automation_program_autorestartenabled" />
+                       </div>
+                    </div>
+                    <div class="ui-block-b" align="right">
+                        <a id="configure_program_editoroptions" href="#" class="ui-btn ui-corner-all ui-btn-inline ui-mini ui-btn-icon-left ui-icon-gear" data-locale-id="configure_program_options">Options</a>
                     </div>
                 </div>
             </div>
@@ -111,7 +115,7 @@
                 <a class="ui-btn ui-btn-icon-left ui-icon-info" href="http://www.homegenie.it/docs/" data-locale-id="configure-editprogram-help" target="_blank">Help</a>
             </div>
             <div data-block-id="configure_program_editfortypecsharp" style="display:none">
-                <textarea id="automation_program_scriptcondition" onkeydown="if (event.which == 9) { pasteIntoInput(this, '\t'); return false; }" spellcheck="false"></textarea>
+                <textarea id="automation_program_scriptsetup" onkeydown="if (event.which == 9) { pasteIntoInput(this, '\t'); return false; }" spellcheck="false"></textarea>
             </div>
             <div data-block-id="configure_program_editfortypewizard" style="display:none;">
                 <div data-role="controlgroup" data-type="horizontal" data-mini="true" style="position:fixed;top:4px;left:4px;position:absolute;margin:0" data-theme="e">

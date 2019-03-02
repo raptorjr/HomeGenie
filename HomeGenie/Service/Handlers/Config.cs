@@ -275,7 +275,7 @@ namespace HomeGenie.Service.Handlers
                             {
                                 string installPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "_update", "files");
                                 Utility.FolderCleanUp(installPath);
-                                Directory.Move(Path.Combine(tempFolderPath, "homegenie"), Path.Combine(installPath, "HomeGenie"));
+                                Directory.Move(Path.Combine(tempFolderPath, "homegenie"), Path.Combine(installPath, "homegenie"));
                                 var installStatus = homegenie.UpdateChecker.InstallFiles();
                                 if (installStatus != UpdateChecker.InstallStatus.Error)
                                 {
@@ -343,20 +343,10 @@ namespace HomeGenie.Service.Handlers
                 {
                     var resultMessage = "ERROR";
                     bool success = homegenie.UpdateChecker.DownloadUpdateFiles();
-                    if (success)
-                    {
-                        if (homegenie.UpdateChecker.IsRestartRequired) // <-- TODO: deprecate this
-                        {
-                            resultMessage = "RESTART";
-                        }
-                        else
-                        {
-                            resultMessage = "OK";
-                        }
-                    }
+                    if (success) resultMessage = "OK";
                     request.ResponseData = new ResponseText(resultMessage);
                 }
-                else if (migCommand.GetOption(0) == "UpdateManager.InstallUpdate") //UpdateManager.InstallProgramsCommit")
+                else if (migCommand.GetOption(0) == "UpdateManager.InstallUpdate")
                 {
                     string resultMessage = "OK";
                     homegenie.SaveData();
@@ -655,7 +645,7 @@ namespace HomeGenie.Service.Handlers
                         //
                         try
                         {
-                            module.DeviceType = (MIG.ModuleTypes)Enum.Parse(typeof(MIG.ModuleTypes), newModules[i]["DeviceType"].ToString(), true);
+                            module.DeviceType = (ModuleTypes)Enum.Parse(typeof(ModuleTypes), newModules[i]["DeviceType"].ToString(), true);
                         }
                         catch
                         {
@@ -765,17 +755,14 @@ namespace HomeGenie.Service.Handlers
                 break;
 
             case "Modules.Delete":
-                var deletedModule = homegenie.Modules.Find(m => m.Domain == migCommand.GetOption(0) && m.Address == migCommand.GetOption(1));
-                if (deletedModule != null)
-                {
-                    homegenie.Modules.Remove(deletedModule);
-                }
+                homegenie.Modules.RemoveAll(m => m.Domain == migCommand.GetOption(0) && m.Address == migCommand.GetOption(1));
+                homegenie.VirtualModules.RemoveAll(m => m.Domain == migCommand.GetOption(0) && m.Address == migCommand.GetOption(1));
                 request.ResponseData = new ResponseText("OK");
                 //
                 homegenie.UpdateModulesDatabase();
                 break;
 
-            case "Stores.List":
+            case "Stores.List":    
                 {
                     var module = homegenie.Modules.Find(m => m.Domain == migCommand.GetOption(0) && m.Address == migCommand.GetOption(1));
                     if (module != null)

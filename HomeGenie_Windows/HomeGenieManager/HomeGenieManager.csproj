@@ -10,7 +10,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>HomeGenieManager</RootNamespace>
     <AssemblyName>HomeGenieManager</AssemblyName>
-    <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <TargetFrameworkProfile>
     </TargetFrameworkProfile>
     <FileAlignment>512</FileAlignment>
@@ -83,10 +83,9 @@
     <Reference Include="System.Xaml">
       <RequiredTargetFramework>4.0</RequiredTargetFramework>
     </Reference>
-    <Reference Include="UPnP, Version=1.0.5728.14268, Culture=neutral, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\Externals\upnp\UPnP.dll</HintPath>
-      <Private>False</Private>
+    <Reference Include="UPnP, Version=1.0.6945.32274, Culture=neutral, PublicKeyToken=null">
+      <HintPath>..\HomeGenie\packages\MIG.Protocols.1.0.5\lib\UPnP.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="WindowsBase" />
     <Reference Include="PresentationCore" />

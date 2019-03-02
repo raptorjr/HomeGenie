@@ -21,50 +21,49 @@
  */
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Reflection;
+
+using HomeGenie.Automation.Scripting;
 using HomeGenie.Service;
 using HomeGenie.Service.Constants;
-using System.IO;
-using System.Collections.Generic;
-using HomeGenie.Automation.Scripting;
-using System.Diagnostics;
 
 namespace HomeGenie.Automation.Engines
 {
     public class CSharpEngine : ProgramEngineBase, IProgramEngine
     {
         // c# program fields
-        private AppDomain _programDomain = null;
-        private Type _assemblyType = null;
-        private Object _scriptInstance = null;
-        private MethodInfo _methodRun = null;
-        private MethodInfo _methodReset = null;
-        private MethodInfo _methodEvaluateCondition = null;
+        private AppDomain _programDomain;
+        private Type _assemblyType;
+        private object _scriptInstance;
+        private MethodInfo _methodRun;
+        private MethodInfo _methodReset;
+        private MethodInfo _methodSetup;
         private Assembly _scriptAssembly;
 
-        private static bool _isShadowCopySet = false;
+        private static bool _isShadowCopySet;
 
-        public CSharpEngine(ProgramBlock pb) : base(pb) 
+        public CSharpEngine(ProgramBlock pb) : base(pb)
         {
             // TODO: SetShadowCopyPath/SetShadowCopyFiles methods are deprecated... 
             // TODO: create own AppDomain for "programDomain" instead of using CurrentDomain
             // TODO: and use AppDomainSetup to set shadow copy for each app domain
             // TODO: !!! verify AppDomain compatibility with mono !!!
-            if (!_isShadowCopySet)
-            {
-                _isShadowCopySet = true;
-                var domain = AppDomain.CurrentDomain;
-                domain.SetShadowCopyPath(Path.Combine(domain.BaseDirectory, "programs"));
-                domain.SetShadowCopyFiles();
-            }
+            if (_isShadowCopySet) return;
+            _isShadowCopySet = true;
+            var domain = AppDomain.CurrentDomain;
+            domain.SetShadowCopyPath(Path.Combine(domain.BaseDirectory, "programs"));
+            domain.SetShadowCopyFiles();
         }
 
         public bool Load()
         {
             var success = LoadAssembly();
-            if (!success)
+            if (!success && String.IsNullOrEmpty(ProgramBlock.ScriptErrors))
             {
-                ProgramBlock.ScriptErrors = "Program update is required.";
+                ProgramBlock.ScriptErrors = "Program is not compiled.";
             }
             return success;
         }
@@ -74,19 +73,20 @@ namespace HomeGenie.Automation.Engines
             Reset();
             ProgramBlock.ActivationTime = null;
             ProgramBlock.TriggerTime = null;
-            if (_programDomain != null)
+            if (_programDomain == null) return;
+            // Unloading program app domain...
+            try
             {
-                // Unloading program app domain...
-                try { AppDomain.Unload(_programDomain); }
-                catch
-                {
-                    // ignored
-                }
-                _programDomain = null;
+                AppDomain.Unload(_programDomain);
             }
+            catch
+            {
+                // ignored
+            }
+            _programDomain = null;
         }
 
-        public List<ProgramError> Compile()
+        public override List<ProgramError> Compile()
         {
             var errors = new List<ProgramError>();
 
@@ -97,17 +97,19 @@ namespace HomeGenie.Automation.Engines
             }
 
             // dispose assembly and interrupt current task (if any)
+            bool wasEnabled = ProgramBlock.IsEnabled;
+            ProgramBlock.ScriptErrors = "";
             ProgramBlock.IsEnabled = false;
 
             // clean up old assembly files
             try
             {
                 // If the file to be deleted does not exist, no exception is thrown.
-                File.Delete(this.AssemblyFile);
-                File.Delete(this.AssemblyFile + ".mdb");
-                File.Delete(this.AssemblyFile.Replace(".dll", ".mdb"));
-                File.Delete(this.AssemblyFile + ".pdb");
-                File.Delete(this.AssemblyFile.Replace(".dll", ".pdb"));
+                File.Delete(AssemblyFile);
+                File.Delete(AssemblyFile + ".mdb");
+                File.Delete(AssemblyFile.Replace(".dll", ".mdb"));
+                File.Delete(AssemblyFile + ".pdb");
+                File.Delete(AssemblyFile.Replace(".dll", ".pdb"));
             }
             catch (Exception ex)
             {
@@ -123,7 +125,7 @@ namespace HomeGenie.Automation.Engines
             var result = new System.CodeDom.Compiler.CompilerResults(null);
             try
             {
-                result = CSharpAppFactory.CompileScript(ProgramBlock.ScriptCondition, ProgramBlock.ScriptSource, tmpfile);
+                result = CSharpAppFactory.CompileScript(ProgramBlock.ScriptSetup, ProgramBlock.ScriptSource, tmpfile);
             }
             catch (Exception ex)
             {
@@ -145,7 +147,8 @@ namespace HomeGenie.Automation.Engines
                     }
                     if (!error.IsWarning)
                     {
-                        errors.Add(new ProgramError {
+                        errors.Add(new ProgramError
+                        {
                             Line = errorRow,
                             Column = error.Column,
                             ErrorMessage = error.ErrorText,
@@ -155,8 +158,10 @@ namespace HomeGenie.Automation.Engines
                     }
                     else
                     {
-                        var warning = string.Format("{0},{1},{2}: {3}", blockType, errorRow, error.Column, error.ErrorText);
-                        Homegenie.ProgramManager.RaiseProgramModuleEvent(ProgramBlock, Properties.CompilerWarning, warning);
+                        var warning = String.Format("{0},{1},{2}: {3}", blockType, errorRow, error.Column,
+                            error.ErrorText);
+                        HomeGenie.ProgramManager.RaiseProgramModuleEvent(ProgramBlock, Properties.CompilerWarning,
+                            warning);
                     }
                 }
             }
@@ -193,26 +198,31 @@ namespace HomeGenie.Automation.Engines
                 HomeGenieService.LogError(ee);
             }
 
+            if (errors.Count == 0 && wasEnabled)
+            {
+                ProgramBlock.IsEnabled = true;
+            }
+            
             return errors;
         }
 
-        public MethodRunResult EvaluateCondition()
+        public override MethodRunResult Setup()
         {
             MethodRunResult result = null;
             if (_scriptAssembly != null && CheckAppInstance())
             {
-                result = (MethodRunResult)_methodEvaluateCondition.Invoke(_scriptInstance, null);
-                result.ReturnValue = (bool)result.ReturnValue || ProgramBlock.WillRun;
+                result = (MethodRunResult) _methodSetup.Invoke(_scriptInstance, null);
+                result.ReturnValue = (bool) result.ReturnValue || ProgramBlock.WillRun;
             }
             return result;
         }
 
-        public MethodRunResult Run(string options)
+        public override MethodRunResult Run(string options)
         {
             MethodRunResult result = null;
             if (_scriptAssembly != null && CheckAppInstance())
             {
-                result = (MethodRunResult)_methodRun.Invoke(_scriptInstance, new object[1] { options });
+                result = (MethodRunResult) _methodRun.Invoke(_scriptInstance, new object[1] {options});
             }
             return result;
         }
@@ -226,9 +236,10 @@ namespace HomeGenie.Automation.Engines
         }
 
 
-        public ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
+        public override ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
         {
-            var error = new ProgramError() {
+            var error = new ProgramError()
+            {
                 CodeBlock = isTriggerBlock ? CodeBlockEnum.TC : CodeBlockEnum.CR,
                 Column = 0,
                 Line = 0,
@@ -240,17 +251,16 @@ namespace HomeGenie.Automation.Engines
             if (isTriggerBlock)
             {
                 var sourceLines = ProgramBlock.ScriptSource.Split('\n').Length;
-                error.Line -=  (CSharpAppFactory.ConditionCodeOffset + CSharpAppFactory.ProgramCodeOffset + sourceLines);
+                error.Line -= (CSharpAppFactory.ConditionCodeOffset + CSharpAppFactory.ProgramCodeOffset + sourceLines);
             }
             else
             {
-                error.Line -=  CSharpAppFactory.ProgramCodeOffset;
+                error.Line -= CSharpAppFactory.ProgramCodeOffset;
             }
             return error;
         }
 
-
-        internal string AssemblyFile
+        private string AssemblyFile
         {
             get
             {
@@ -260,11 +270,8 @@ namespace HomeGenie.Automation.Engines
             }
         }
 
-        internal bool LoadAssembly()
+        private bool LoadAssembly()
         {
-            if (ProgramBlock.Type.ToLower() != "csharp")
-                return false;
-
             try
             {
                 var assemblyData = File.ReadAllBytes(this.AssemblyFile);
@@ -307,12 +314,12 @@ namespace HomeGenie.Automation.Engines
                     _scriptInstance = Activator.CreateInstance(_assemblyType);
 
                     var miSetHost = _assemblyType.GetMethod("SetHost");
-                    miSetHost.Invoke(_scriptInstance, new object[2] { Homegenie, ProgramBlock.Address });
+                    miSetHost.Invoke(_scriptInstance, new object[2] {HomeGenie, ProgramBlock.Address});
 
-                    _methodRun = _assemblyType.GetMethod("Run", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
-                    // TODO: v1.1 !!!IMPORTANT!!! the method EvaluateCondition will be renamed to EvaluateStartupCode,
-                    // TODO: v1.1 !!!IMPORTANT!!! so if EvaluateCondition is not found look for EvaluateStartupCode method instead
-                    _methodEvaluateCondition = _assemblyType.GetMethod("EvaluateCondition", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
+                    _methodRun = _assemblyType.GetMethod("Run",
+                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
+                    _methodSetup = _assemblyType.GetMethod("Setup",
+                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
                     _methodReset = _assemblyType.GetMethod("Reset");
 
                     success = true;
@@ -330,8 +337,5 @@ namespace HomeGenie.Automation.Engines
             }
             return success;
         }
-
-
     }
 }
-

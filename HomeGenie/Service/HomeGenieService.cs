@@ -27,6 +27,7 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Xml.Serialization;
+
 using System.Net.Sockets;
 using System.Threading;
 using System.Xml;
@@ -718,6 +719,14 @@ namespace HomeGenie.Service
 
         #region Initialization and Data Persistence
 
+        private Func<Type,Exception,bool> UpdateDatabaseErrorHandler = new Func<Type, Exception, bool>((t, e) =>
+            {
+                LogError(Domains.HomeAutomation_HomeGenie,
+                    string.Format("UpdateXmlDatabase<{0}>()", t.FullName), e.Message, "StackTrace",
+                    e.StackTrace);
+                return false;
+            });
+
         public bool UpdateGroupsDatabase(string namePrefix)
         {
             var groups = controlGroups;
@@ -729,14 +738,13 @@ namespace HomeGenie.Service
             {
                 namePrefix = ""; // default fallback to Control Groups groups.xml - no prefix
             }
-
-            var filename = namePrefix.ToLower() + "groups.xml";
-            return UpdateXmlDatabase(groups, filename);
+            string filename = namePrefix.ToLower() + "groups.xml";
+            return Utility.UpdateXmlDatabase(groups, filename, UpdateDatabaseErrorHandler);
         }
 
         public bool UpdateModulesDatabase()
         {
-            var success = false;
+            bool success = false;
             modules_RefreshAll();
             lock (systemModules.LockObject)
             {
@@ -759,8 +767,7 @@ namespace HomeGenie.Service
                             }
                         }
                     }
-
-                    success = UpdateXmlDatabase(clonedModules, "modules.xml");
+                    success = Utility.UpdateXmlDatabase(clonedModules, "modules.xml", UpdateDatabaseErrorHandler);
                 }
                 catch (Exception ex)
                 {
@@ -773,45 +780,12 @@ namespace HomeGenie.Service
 
         public bool UpdateProgramsDatabase()
         {
-            return UpdateXmlDatabase(masterControlProgram.Programs, "programs.xml");
+            return Utility.UpdateXmlDatabase(masterControlProgram.Programs, "programs.xml", UpdateDatabaseErrorHandler);
         }
 
         public bool UpdateSchedulerDatabase()
         {
-            return UpdateXmlDatabase(masterControlProgram.SchedulerService.Items, "scheduler.xml");
-        }
-
-        private static bool UpdateXmlDatabase<T>(T items, string filename)
-        {
-            var success = false;
-            XmlWriter writer = null;
-            try
-            {
-                var filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, filename);
-                if (File.Exists(filePath))
-                    File.Delete(filePath);
-
-                var settings = new XmlWriterSettings
-                {
-                    Indent = true,
-                    Encoding = Encoding.UTF8
-                };
-                var serializer = new XmlSerializer(typeof(T));
-                writer = XmlWriter.Create(filePath, settings);
-                serializer.Serialize(writer, items);
-                writer.Flush();
-                success = true;
-            }
-            catch (Exception e)
-            {
-                LogError(Domains.HomeAutomation_HomeGenie, string.Format("UpdateXmlDatabase<{0}>()", typeof(T).FullName), e.Message, "StackTrace", e.StackTrace);
-            }
-            finally
-            {
-                if(writer != null)
-                    writer.Close();
-            }
-            return success;
+            return Utility.UpdateXmlDatabase(masterControlProgram.SchedulerService.Items, "scheduler.xml", UpdateDatabaseErrorHandler);
         }
 
         /// <summary>
@@ -957,8 +931,11 @@ namespace HomeGenie.Service
             masterControlProgram = new ProgramManager(this);
             try
             {
+                string programsDatabase = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "programs.xml");
+                // TODO: Deprecate Compat
+                Compat_526.FixProgramsDatabase(programsDatabase);
                 var serializer = new XmlSerializer(typeof(List<ProgramBlock>));
-                using (var reader = new StreamReader(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "programs.xml")))
+                using (var reader = new StreamReader(programsDatabase))
                 {
                     var programs = (List<ProgramBlock>)serializer.Deserialize(reader);
                     foreach (var program in programs)
@@ -1216,7 +1193,15 @@ namespace HomeGenie.Service
                 {
                     module.Properties.Sort((ModuleParameter p1, ModuleParameter p2) =>
                     {
-                        return p1.Name.CompareTo(p2.Name);
+                        int c = -1;
+                        try
+                        {
+                            c = p1.Name.CompareTo(p2.Name);
+                        }
+                        catch (Exception e)
+                        {
+                        }
+                        return c;
                     });
                 }
                 //
@@ -1224,18 +1209,24 @@ namespace HomeGenie.Service
                 //
                 systemModules.Sort((Module m1, Module m2) =>
                 {
-                    System.Text.RegularExpressions.Regex re = new System.Text.RegularExpressions.Regex(@"([a-zA-Z]+)(\d+)");
-                    System.Text.RegularExpressions.Match result1 = re.Match(m1.Address);
-                    System.Text.RegularExpressions.Match result2 = re.Match(m2.Address);
+                    int c = -1;
+                    try
+                    {
+                        System.Text.RegularExpressions.Regex re = new System.Text.RegularExpressions.Regex(@"([a-zA-Z]+)(\d+)");
+                        System.Text.RegularExpressions.Match result1 = re.Match(m1.Address);
+                        System.Text.RegularExpressions.Match result2 = re.Match(m2.Address);
 
-                    string alphaPart1 = result1.Groups[1].Value.PadRight(8, '0');
-                    string numberPart1 = (String.IsNullOrWhiteSpace(result1.Groups[2].Value) ? m1.Address.PadLeft(8, '0') : result1.Groups[2].Value.PadLeft(8, '0'));
-                    string alphaPart2 = result2.Groups[1].Value.PadRight(8, '0');
-                    string numberPart2 = (String.IsNullOrWhiteSpace(result2.Groups[2].Value) ? m2.Address.PadLeft(8, '0') : result2.Groups[2].Value.PadLeft(8, '0'));
+                        string alphaPart1 = result1.Groups[1].Value.PadRight(8, '0');
+                        string numberPart1 = (String.IsNullOrWhiteSpace(result1.Groups[2].Value) ? m1.Address.PadLeft(8, '0') : result1.Groups[2].Value.PadLeft(8, '0'));
+                        string alphaPart2 = result2.Groups[1].Value.PadRight(8, '0');
+                        string numberPart2 = (String.IsNullOrWhiteSpace(result2.Groups[2].Value) ? m2.Address.PadLeft(8, '0') : result2.Groups[2].Value.PadLeft(8, '0'));
 
-                    string d1 = m1.Domain + "|" + alphaPart1 + numberPart1;
-                    string d2 = m2.Domain + "|" + alphaPart2 + numberPart2;
-                    return d1.CompareTo(d2);
+                        string d1 = m1.Domain + "|" + alphaPart1 + numberPart1;
+                        string d2 = m2.Domain + "|" + alphaPart2 + numberPart2;
+
+                        c = d1.CompareTo(d2);
+                    } catch(Exception e) {}
+                    return c;
                 });
 
             }

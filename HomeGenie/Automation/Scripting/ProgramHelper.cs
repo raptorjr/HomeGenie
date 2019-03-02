@@ -21,19 +21,15 @@
  */
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Threading;
+using System.Dynamic;
+
+using Newtonsoft.Json;
 
 using HomeGenie.Data;
 using HomeGenie.Service;
-using System.Threading;
-using System.Net;
-using System.IO;
 using HomeGenie.Service.Constants;
-using System.Dynamic;
-using Newtonsoft.Json;
-using MIG;
+using IronPython.Runtime.Exceptions;
 
 namespace HomeGenie.Automation.Scripting
 {
@@ -554,6 +550,35 @@ namespace HomeGenie.Automation.Scripting
         }
 
         /// <summary>
+        /// Display UI notification message from current program using the default `Program.Title`.
+        /// </summary>
+        /// <param name="message">Message.</param>
+        /// <remarks />
+        /// <example>
+        /// Example:
+        /// <code>
+        /// // Display `Hello world!` popup with the default `Program.Title `
+        /// Program.Notify("Hello world!");
+        /// </code>
+        /// </example>
+        public ProgramHelper Notify(string message)
+        {
+            dynamic notification = new ExpandoObject();
+            notification.Title = Title;
+            notification.Message = message;
+            string serializedMessage = JsonConvert.SerializeObject(notification);
+            homegenie.RaiseEvent(
+                myProgramId,
+                Domains.HomeAutomation_HomeGenie_Automation,
+                myProgramId.ToString(),
+                "Automation Program",
+                Properties.ProgramNotification,
+                serializedMessage
+            );
+            return this;
+        }
+
+        /// <summary>
         /// Display UI notification message from current program.
         /// </summary>
         /// <param name="title">Title.</param>
@@ -591,6 +616,16 @@ namespace HomeGenie.Automation.Scripting
         public ProgramHelper Notify(string title, string message, params object[] paramList)
         {
             return this.Notify(title, String.Format(message, paramList));
+        }
+
+        /// <summary>
+        /// Display UI notification message from current program.
+        /// </summary>
+        /// <param name="message">Formatted message.</param>
+        /// <param name="paramList">Format parameter list.</param>
+        public ProgramHelper Notify(string message, params object[] paramList)
+        {
+            return this.Notify(Title, String.Format(message, paramList));
         }
 
         /// <summary>
@@ -636,14 +671,15 @@ namespace HomeGenie.Automation.Scripting
         /// <param name="parameter">Parameter name.</param>
         /// <param name="value">The new parameter value to set.</param>
         /// <param name="description">Event description.</param>
-        public ProgramHelper RaiseEvent(ModuleHelper sourceModule, string parameter, string value, string description)
+        [Obsolete("Use <module>.RaiseEvent instead.")]
+        public ProgramHelper RaiseEvent(ModuleHelper module, string parameter, string value, string description)
         {
             // TODO: deprecate this method, use ModuleHelper.RaiseEvent instead
             try
             {
                 var actionEvent = homegenie.MigService.GetEvent(
-                    sourceModule.Instance.Domain,
-                    sourceModule.Instance.Address,
+                    module.Instance.Domain,
+                    module.Instance.Address,
                     description,
                     parameter,
                     value
@@ -783,6 +819,14 @@ namespace HomeGenie.Automation.Scripting
             }
         }
 
+        /// <summary>
+        /// Force update module database with current data.
+        /// </summary>
+        public bool UpdateModuleDatabase()
+        {
+            return homegenie.UpdateModulesDatabase();
+        }
+
         public ProgramHelper Reset()
         {
             this.initialized = false;
@@ -797,7 +841,6 @@ namespace HomeGenie.Automation.Scripting
             }
             return this;
         }
-
 
         private void RelocateProgramModule()
         {

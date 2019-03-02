@@ -24,12 +24,14 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.IO;
+using System.Linq;
+
+using MIG;
+
+using HomeGenie.Automation.Scheduler;
 using HomeGenie.Data;
 using HomeGenie.Service;
-using MIG;
 using HomeGenie.Service.Constants;
-using HomeGenie.Automation.Scheduler;
-using System.Linq;
 
 namespace HomeGenie.Automation
 {
@@ -104,13 +106,7 @@ namespace HomeGenie.Automation
 
         public List<ProgramError> CompileScript(ProgramBlock program)
         {
-            return program.Compile();
-        }
-
-        // TODO: v1.1 !!!IMPORTANT!!! move thread allocation and starting to ProgramEngineBase.cs class
-        public void Run(ProgramBlock program, string options)
-        {
-            program.Engine.StartProgram(options);
+            return program.Engine.Compile();
         }
 
         public TsList<ProgramBlock> Programs { get { return automationPrograms; } }
@@ -178,8 +174,6 @@ namespace HomeGenie.Automation
             {
                 Utility.ModuleParameterSet(programModule, property, value);
                 hgService.RaiseEvent(program.Address, programModule.Domain, programModule.Address, "Automation Program", property, value);
-                //homegenie.MigService.RaiseEvent(actionEvent);
-                //homegenie.SignalModulePropertyChange(this, programModule, actionEvent);
             }
         }
 

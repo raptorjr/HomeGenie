@@ -28,7 +28,6 @@ using System.Text;
 using System.IO;
 using System.Net;
 using System.Net.Mail;
-using System.Threading;
 
 using System.Net.NetworkInformation;
 using System.Collections.Specialized;
@@ -244,7 +243,7 @@ namespace HomeGenie.Automation.Scripting
                             smtpClient.EnableSsl = _mailSsl == true;
 
                             Log.Trace("SendMessage: going to send email {0} using mailService '{1}', port '{2}', credentials {3}, using SSL = {4}",
-                                message.ToPrettyJson(), _mailService, _mailPort, credentials.ToPrettyJson(), smtpClient.EnableSsl);
+                                message.ToString(), _mailService, _mailPort, credentials.ToString(), smtpClient.EnableSsl);
                             smtpClient.Send(message);
                             Log.Trace("Email sent");
                             _attachments.Clear();
@@ -266,17 +265,6 @@ namespace HomeGenie.Automation.Scripting
             }
 
             return true;
-        }
-
-        // TODO: deprecate this (Program.RunAsyncTask can already do the trick)
-        [Obsolete("use 'Program.RunAsyncTask' instead")]
-        public void SendMessageAsync(string from, string recipients, string subject, string messageText)
-        {
-            var t = new Thread(() =>
-            {
-                SendMessage(from, recipients, subject, messageText);
-            });
-            t.Start();
         }
 
         #endregion
@@ -401,17 +389,6 @@ namespace HomeGenie.Automation.Scripting
                 }
             }
             return returnvalue;
-        }
-
-        // TODO: deprecate this (Program.RunAsyncTask can do the trick)
-        [Obsolete("use 'Program.RunAsyncTask' instead")]
-        public void CallAsync()
-        {
-            var t = new Thread(() =>
-            {
-                Call();
-            });
-            t.Start();
         }
 
         /// <summary>

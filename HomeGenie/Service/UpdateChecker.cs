@@ -1,4 +1,4 @@
-﻿/*
+﻿﻿/*
     This file is part of HomeGenie Project source code.
 
     HomeGenie is free software: you can redistribute it and/or modify
@@ -29,7 +29,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Text;
 using System.Timers;
 using System.Xml.Serialization;
 using System.Security.Cryptography;
@@ -176,8 +175,6 @@ namespace HomeGenie.Service
         }
 
 
-        // TODO: add automatic interval check and "UpdateAvailable", "UpdateChecking" events
-
         public UpdateChecker(HomeGenieService hg)
         {
             homegenie = hg;
@@ -194,7 +191,7 @@ namespace HomeGenie.Service
             if (Environment.OSVersion.Platform == PlatformID.Unix)
             {
                 // TODO: this is just an hack to fix certificate issues on mono < 4.0,
-                ServicePointManager.ServerCertificateValidationCallback = Validator;
+                ServicePointManager.ServerCertificateValidationCallback += Validator;
             }
         }
 
@@ -252,7 +249,7 @@ namespace HomeGenie.Service
         {
             GetCurrentRelease();
             //githubReleases
-            using (var client = new WebClient())
+            using (var client = new WebClientPx())
             {
                 client.Headers.Add("user-agent", "HomeGenieUpdater/1.0 (compatible; MSIE 7.0; Windows NT 6.0)");
                 try
@@ -308,46 +305,6 @@ namespace HomeGenie.Service
                 {
                     Console.WriteLine(e.Message);
                     remoteUpdates = null;
-                }
-                finally
-                {
-                    client.Dispose();
-                }
-            }
-            return remoteUpdates;
-        }
-
-        // TODO: deprecate this
-        public List<ReleaseInfo> GetRemoteUpdates()
-        {
-            using (var client = new WebClient())
-            {
-                client.Headers.Add("user-agent", "HomeGenieUpdater/1.0 (compatible; MSIE 7.0; Windows NT 6.0)");
-                try
-                {
-                    string releaseXml = client.DownloadString(endpointUrl);
-                    var serializer = new XmlSerializer(typeof(List<ReleaseInfo>));
-                    using (TextReader reader = new StringReader(releaseXml))
-                    {
-                        remoteUpdates.Clear();
-                        var updates = (List<ReleaseInfo>)serializer.Deserialize(reader);
-                        updates.Sort(delegate(ReleaseInfo a, ReleaseInfo b)
-                        {
-                            return a.ReleaseDate.CompareTo(b.ReleaseDate);
-                        });
-                        foreach (var releaseInfo in updates)
-                        {
-                            if (currentRelease != null && currentRelease.ReleaseDate < releaseInfo.ReleaseDate)
-                            {
-                                remoteUpdates.Add(releaseInfo);
-                                if (releaseInfo.UpdateBreak)
-                                    break;
-                            }
-                        }
-                    }
-                }
-                catch (Exception)
-                {
                 }
                 finally
                 {
@@ -417,7 +374,7 @@ namespace HomeGenie.Service
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(archiveName));
             }
-            using (var client = new WebClient())
+            using (var client = new WebClientPx())
             {
                 client.Headers.Add("user-agent", "HomeGenieUpdater/1.0 (compatible; MSIE 7.0; Windows NT 6.0)");
                 try
@@ -536,14 +493,13 @@ namespace HomeGenie.Service
                         //Console.WriteLine("NEW FILE {0}", file);
                     }
 
-                    if (processFile)
-                    {
+                    if (!processFile) continue;
 
-                        // Some files needs to be handled differently than just copying
-                        if (destinationFile.EndsWith(".xml") && File.Exists(destinationFile))
+                    // Some files needs to be handled differently than just copying
+                    if (destinationFile.EndsWith(".xml") && File.Exists(destinationFile))
+                    {
+                        switch (destinationFile)
                         {
-                            switch (destinationFile)
-                            {
                             case "automationgroups.xml":
                                 doNotCopy = true;
                                 status = UpdateAutomationGroups(file) ? InstallStatus.Success : InstallStatus.Error;;
@@ -570,73 +526,71 @@ namespace HomeGenie.Service
                                 doNotCopy = true;
                                 status = UpdateSystemConfig(file) ? InstallStatus.Success : InstallStatus.Error;;
                                 break;
-                            }
-                            if (status == InstallStatus.Error)
-                            {
-                                break;
-                            }
                         }
-                        else if (destinationFile.EndsWith("homegenie_stats.db"))
+                        if (status == InstallStatus.Error)
                         {
-                            doNotCopy = true;
+                            break;
                         }
+                    }
+                    else if (destinationFile.EndsWith("homegenie_stats.db"))
+                    {
+                        doNotCopy = true;
+                    }
 
-                        // Update the file
-                        if (!doNotCopy)
+                    if (doNotCopy) continue;
+                    
+                    // Update the file
+                    if (destinationFile.EndsWith(".exe") || destinationFile.EndsWith(".dll") || destinationFile.EndsWith(".so"))
+                        restartRequired = true;
+
+                    if (!String.IsNullOrWhiteSpace(destinationFolder) && !Directory.Exists(destinationFolder))
+                    {
+                        Directory.CreateDirectory(destinationFolder);
+                    }
+
+                    // backup current file before replacing it
+                    if (File.Exists(destinationFile))
+                    {
+                        string oldFile = Path.Combine(oldFilesPath, destinationFile);
+                        Directory.CreateDirectory(Path.GetDirectoryName(oldFile));
+
+                        LogMessage("+ Backup file '" + oldFile + "'");
+
+                        // TODO: delete oldFilesPath before starting update
+                        //File.Delete(oldFile); 
+
+                        if (destinationFile.EndsWith(".exe") || destinationFile.EndsWith(".dll"))
                         {
-                            if (destinationFile.EndsWith(".exe") || destinationFile.EndsWith(".dll") || destinationFile.EndsWith(".so"))
-                                restartRequired = true;
+                            // this will allow replace of new exe and dll files
+                            File.Move(destinationFile, oldFile);
+                        }
+                        else
+                        {
+                            File.Copy(destinationFile, oldFile);
+                        }
+                    }
 
-                            if (!String.IsNullOrWhiteSpace(destinationFolder) && !Directory.Exists(destinationFolder))
-                            {
-                                Directory.CreateDirectory(destinationFolder);
-                            }
-
-                            // backup current file before replacing it
-                            if (File.Exists(destinationFile))
-                            {
-                                string oldFile = Path.Combine(oldFilesPath, destinationFile);
-                                Directory.CreateDirectory(Path.GetDirectoryName(oldFile));
-
-                                LogMessage("+ Backup file '" + oldFile + "'");
-
-                                // TODO: delete oldFilesPath before starting update
-                                //File.Delete(oldFile); 
-
-                                if (destinationFile.EndsWith(".exe") || destinationFile.EndsWith(".dll"))
-                                {
-                                    // this will allow replace of new exe and dll files
-                                    File.Move(destinationFile, oldFile);
-                                }
-                                else
-                                {
-                                    File.Copy(destinationFile, oldFile);
-                                }
-                            }
-
+                    try
+                    {
+                        LogMessage("+ Copying file '" + destinationFile + "'");
+                        if (!string.IsNullOrWhiteSpace(Path.GetDirectoryName(destinationFile)) && !Directory.Exists(Path.GetDirectoryName(destinationFile)))
+                        {
                             try
                             {
-                                LogMessage("+ Copying file '" + destinationFile + "'");
-                                if (!String.IsNullOrWhiteSpace(Path.GetDirectoryName(destinationFile)) && !Directory.Exists(Path.GetDirectoryName(destinationFile)))
-                                {
-                                    try
-                                    {
-                                        Directory.CreateDirectory(Path.GetDirectoryName(destinationFile));
-                                        LogMessage("+ Created folder '" + Path.GetDirectoryName(destinationFile) + "'");
-                                    }
-                                    catch
-                                    {
-                                    }
-                                }
-                                File.Copy(file, destinationFile, true);
+                                Directory.CreateDirectory(Path.GetDirectoryName(destinationFile));
+                                LogMessage("+ Created folder '" + Path.GetDirectoryName(destinationFile) + "'");
                             }
-                            catch (Exception e)
+                            catch
                             {
-                                LogMessage("! Error copying file '" + destinationFile + "' (" + e.Message + ")");
-                                status = InstallStatus.Error;
-                                break;
                             }
                         }
+                        File.Copy(file, destinationFile, true);
+                    }
+                    catch (Exception e)
+                    {
+                        LogMessage("! Error copying file '" + destinationFile + "' (" + e.Message + ")");
+                        status = InstallStatus.Error;
+                        break;
                     }
 
                 }
@@ -654,27 +608,6 @@ namespace HomeGenie.Service
             }
 
             return status;
-        }
-
-        // TODO: deprecate this
-        public bool IsRestartRequired
-        {
-            get
-            {
-                bool restartRequired = false;
-                if (remoteUpdates != null)
-                {
-                    foreach (var releaseInfo in remoteUpdates)
-                    {
-                        if (releaseInfo.RequireRestart)
-                        {
-                            restartRequired = true;
-                            break;
-                        }
-                    }
-                }
-                return restartRequired;
-            }
         }
 
         public bool UpdateGroups(string file)
@@ -941,10 +874,7 @@ namespace HomeGenie.Service
 
         private bool ProgramsDiff(ProgramBlock oldProgram, ProgramBlock newProgram)
         {
-            bool unchanged = (JsonConvert.SerializeObject(oldProgram.ConditionType) == JsonConvert.SerializeObject(newProgram.ConditionType)) &&
-                             (JsonConvert.SerializeObject(oldProgram.Conditions) == JsonConvert.SerializeObject(newProgram.Conditions)) &&
-                             (JsonConvert.SerializeObject(oldProgram.Commands) == JsonConvert.SerializeObject(newProgram.Commands)) &&
-                             (oldProgram.ScriptCondition == newProgram.ScriptCondition) &&
+            bool unchanged = (oldProgram.ScriptSetup == newProgram.ScriptSetup) &&
                              (oldProgram.ScriptSource == newProgram.ScriptSource) &&
                              (oldProgram.Name == newProgram.Name) &&
                              (oldProgram.Description == newProgram.Description) &&
@@ -966,9 +896,56 @@ namespace HomeGenie.Service
             Check();
             if (IsUpdateAvailable)
             {
-                // TODO: ...
+                // TODO: Implement automatic update functionality?
             }
         }
 
+    }
+
+    // Work around for Mono TLS 1.2 issue (only applied to github.com)
+    // https://tirania.org/blog/archive/2017/Nov-20.html
+    public class WebClientPx : WebClient
+    {
+        public new string DownloadString(string address)
+        {
+            string result;
+            try
+            {
+                result = base.DownloadString(address);
+            }
+            catch (Exception e)
+            {
+                // try using proxy
+                if (Environment.OSVersion.Platform == PlatformID.Unix && address.StartsWith("https://") && address.IndexOf("github.com/") > 0)
+                {
+                    using (var wc = new WebClient())
+                    {
+                        result = wc.DownloadString(String.Format("http://zuix.it/gh/{0}", address.Substring(8)));
+                    }
+                }
+                else
+                {
+                    throw e;
+                }
+            }
+            return result;
+        }
+        public new void DownloadFile(string address, string fileName)
+        {
+            try
+            {
+                base.DownloadFile(address, fileName);
+            }
+            catch (Exception e)
+            {
+                if (Environment.OSVersion.Platform == PlatformID.Unix && address.StartsWith("https://") && address.IndexOf("github.com/") > 0)
+                {
+                    using (var wc = new WebClient())
+                    {
+                        wc.DownloadFile(String.Format("http://zuix.it/gh/{0}", address.Substring(8)), fileName);
+                    }
+                }
+            }
+        }
     }
 }

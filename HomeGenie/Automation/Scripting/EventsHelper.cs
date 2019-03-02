@@ -21,9 +21,6 @@
  */
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 using HomeGenie.Data;
 using HomeGenie.Service;
@@ -210,14 +207,6 @@ namespace HomeGenie.Automation.Scripting
             var program = homegenie.ProgramManager.Programs.Find(p => p.Address.ToString() == myProgramId.ToString());
             program.Engine.RegisterDynamicApi(apiCall, handler);
             return this;
-        }
-
-
-        //TODO: deprecate this
-        [Obsolete("use 'ModuleParameterChanged' instead")]
-        public EventsHelper ModuleParameterChange(Func<ModuleHelper, ModuleParameter, bool> handler)
-        {
-            return ModuleParameterChanged(handler);
         }
 
     }

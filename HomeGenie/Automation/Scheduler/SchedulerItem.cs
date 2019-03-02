@@ -22,8 +22,10 @@
 
 using System;
 using System.Collections.Generic;
-using Newtonsoft.Json;
 using System.Xml.Serialization;
+
+using Newtonsoft.Json;
+
 using HomeGenie.Data;
 
 namespace HomeGenie.Automation.Scheduler
@@ -82,21 +84,16 @@ namespace HomeGenie.Automation.Scheduler
         /// <value>The bound modules.</value>
         public List<ModuleReference> BoundModules { get; set; }
 
-        [XmlIgnore,JsonIgnore]
+        [XmlIgnore, JsonIgnore]
         public string LastOccurrence { get; set; }
 
-        // TODO: deprecate this field - left for compatibility with hg <= r521
-        [Obsolete("deprecate this field - left for compatibility with hg <= r521")]
-        public string ProgramId { get; set; }
-
-        [XmlIgnore,JsonIgnore]
+        [XmlIgnore, JsonIgnore]
         public SchedulerScriptingEngine ScriptEngine { get; set; }
 
         public SchedulerItem()
         {
             Name = "";
             CronExpression = "";
-            ProgramId = "";
             IsEnabled = false;
             LastOccurrence = "";
             BoundDevices = new List<string>();

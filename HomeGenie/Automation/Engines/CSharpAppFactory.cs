@@ -23,10 +23,11 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using Microsoft.CSharp;
 using System.CodeDom.Compiler;
 using System.IO;
 using System.Linq;
+
+using Microsoft.CSharp;
 
 namespace HomeGenie.Automation.Engines
 {
@@ -39,7 +40,8 @@ namespace HomeGenie.Automation.Engines
             get { return Includes.Count() + 15; }
         }
 
-        static readonly string[] Includes =
+        // TODO: move this to a config file
+        private static readonly string[] Includes =
         {
             "System",
             "System.Text",
@@ -57,8 +59,11 @@ namespace HomeGenie.Automation.Engines
             "HomeGenie.Automation",
             "HomeGenie.Data",
             "MIG",
+            "CM19Lib",
+            "X10 = CM19Lib.X10",
             "Innovative.Geometry",
             "Innovative.SolarCalculator",
+            "OpenSource.UPnP",
             "Raspberry",
             "Raspberry.Timers",
             "Raspberry.IO",
@@ -86,16 +91,16 @@ namespace HomeGenie.Automation.Engines
             "Raspberry.IO.GeneralPurpose.Behaviors",
             "Raspberry.IO.GeneralPurpose.Configuration",
             "Raspberry.IO.InterIntegratedCircuit",
-            "Raspberry.IO.SerialPeripheralInterface",
+            "Raspberry.IO.SerialPeripheralInterface"
         };
 
-        public static CompilerResults CompileScript(string conditionSource, string scriptSource, string outputDllFile)
+        public static CompilerResults CompileScript(string scriptSetup, string scriptSource, string outputDllFile)
         {
             var source = @"# pragma warning disable 0168 // variable declared but not used.
 # pragma warning disable 0219 // variable assigned but not used.
 # pragma warning disable 0414 // private field assigned but not used.
 
-{usings}
+{using}
 
 namespace HomeGenie.Automation.Scripting
 {
@@ -106,16 +111,16 @@ namespace HomeGenie.Automation.Scripting
         {
 //////////////////////////////////////////////////////////////////
 // NOTE: user code start line is 16 *** please add new code after this method, do not alter start line! ***
-{statement}
+{source}
 //////////////////////////////////////////////////////////////////
         }
 
         #pragma warning disable 0162
-        private bool EvaluateConditionBlock()
+        private bool SetupCode()
         {
 //////////////////////////////////////////////////////////////////
 // NOTE: user code start line is ??? *** please add new code after this method, do not alter start line! ***
-{condition}
+{setup}
 //////////////////////////////////////////////////////////////////
             return false;
         }
@@ -135,13 +140,13 @@ namespace HomeGenie.Automation.Scripting
             return new MethodRunResult(){ Exception = ex, ReturnValue = null };
         }
 
-        private MethodRunResult EvaluateCondition()
+        private MethodRunResult Setup()
         {
             Exception ex = null;
             bool retval = false;
             try
             {
-                    retval = EvaluateConditionBlock();
+                retval = SetupCode();
             }
             catch (Exception e)
             {
@@ -153,17 +158,19 @@ namespace HomeGenie.Automation.Scripting
         public ScriptingHost hg { get { return (ScriptingHost)this; } }
     }
 }";
-            var usings = string.Join(" ", Includes.Select(x => string.Format("using {0};" + Environment.NewLine, x)));
+            var usingNs = String.Join(" ", Includes.Select(x => String.Format("using {0};" + Environment.NewLine, x)));
             source = source
-                .Replace("{usings}", usings)
-                .Replace("{statement}", scriptSource)
-                .Replace("{condition}", conditionSource);
+                .Replace("{using}", usingNs)
+                .Replace("{source}", scriptSource)
+                .Replace("{setup}", scriptSetup);
 
-            var providerOptions = new Dictionary<string, string> {
-                //                    { "CompilerVersion", "v4.0" }
+            var providerOptions = new Dictionary<string, string>
+            {
+                //{ "CompilerVersion", "v4.0" }
             };
             var provider = new CSharpCodeProvider(providerOptions);
-            var compilerParams = new CompilerParameters {
+            var compilerParams = new CompilerParameters
+            {
                 GenerateInMemory = false,
                 GenerateExecutable = false,
                 IncludeDebugInformation = true,
@@ -183,7 +190,7 @@ namespace HomeGenie.Automation.Scripting
                 if (displayName != null)
                 {
                     int major;
-                    if (int.TryParse(displayName.Invoke(null, null).ToString().Substring(0, 1), out major) && major > 2)
+                    if (Int32.TryParse(displayName.Invoke(null, null).ToString().Substring(0, 1), out major) && major > 2)
                     {
                         relocateSystemAsm = true;
                     }
@@ -218,11 +225,14 @@ namespace HomeGenie.Automation.Scripting
 
             compilerParams.ReferencedAssemblies.Add("HomeGenie.exe");
             compilerParams.ReferencedAssemblies.Add("MIG.dll");
+            compilerParams.ReferencedAssemblies.Add(Path.Combine("lib", "mig", "CM19Lib.dll"));
             compilerParams.ReferencedAssemblies.Add("NLog.dll");
             compilerParams.ReferencedAssemblies.Add("Newtonsoft.Json.dll");
 
             compilerParams.ReferencedAssemblies.Add("SerialPortLib.dll");
             compilerParams.ReferencedAssemblies.Add("NetClientLib.dll");
+
+            compilerParams.ReferencedAssemblies.Add("UPnP.dll");
 
             //if (Raspberry.Board.Current.IsRaspberryPi)
             {
@@ -235,13 +245,11 @@ namespace HomeGenie.Automation.Scripting
                 compilerParams.ReferencedAssemblies.Add("UnitsNet.dll");
             }
 
-            compilerParams.ReferencedAssemblies.Add(Path.Combine("lib", "shared", "M2Mqtt.Net.dll"));
             compilerParams.ReferencedAssemblies.Add(Path.Combine("lib", "shared", "Innovative.Geometry.dll"));
             compilerParams.ReferencedAssemblies.Add(Path.Combine("lib", "shared", "Innovative.SolarCalculator.dll"));
 
             // compile and generate script assembly
             return provider.CompileAssemblyFromSource(compilerParams, source);
         }
-
     }
 }

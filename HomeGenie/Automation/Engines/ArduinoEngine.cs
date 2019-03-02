@@ -23,15 +23,15 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+
 using HomeGenie.Automation.Scripting;
 using HomeGenie.Service.Constants;
-using System.Threading;
 
 namespace HomeGenie.Automation.Engines
 {
-    public class ArduinoEngine  : ProgramEngineBase, IProgramEngine
+    public class ArduinoEngine : ProgramEngineBase, IProgramEngine
     {
-        
         public ArduinoEngine(ProgramBlock pb) : base(pb)
         {
         }
@@ -45,16 +45,15 @@ namespace HomeGenie.Automation.Engines
             return true;
         }
 
-        public MethodRunResult EvaluateCondition()
+        public override MethodRunResult Setup()
         {
             return null;
         }
 
-        public MethodRunResult Run(string options)
+        public override MethodRunResult Run(string options)
         {
             var result = new MethodRunResult();
-            result = new MethodRunResult();
-            Homegenie.RaiseEvent(
+            HomeGenie.RaiseEvent(
                 Domains.HomeGenie_System,
                 Domains.HomeAutomation_HomeGenie_Automation,
                 ProgramBlock.Address.ToString(),
@@ -69,23 +68,21 @@ namespace HomeGenie.Automation.Engines
                 ProgramBlock.Address.ToString()
             )).Split('\n');
             //
-            for (int x = 0; x < outputResult.Length; x++)
+            foreach (var res in outputResult)
             {
-                if (!String.IsNullOrWhiteSpace(outputResult[x]))
-                {
-                    Homegenie.RaiseEvent(
-                        Domains.HomeGenie_System,
-                        Domains.HomeAutomation_HomeGenie_Automation,
-                        ProgramBlock.Address.ToString(),
-                        "Arduino Sketch",
-                        "Arduino.UploadOutput",
-                        outputResult[x]
-                    );
-                    Thread.Sleep(500);
-                }
+                if (String.IsNullOrWhiteSpace(res)) continue;
+                HomeGenie.RaiseEvent(
+                    Domains.HomeGenie_System,
+                    Domains.HomeAutomation_HomeGenie_Automation,
+                    ProgramBlock.Address.ToString(),
+                    "Arduino Sketch",
+                    "Arduino.UploadOutput",
+                    res
+                );
+                Thread.Sleep(500);
             }
             //
-            Homegenie.RaiseEvent(
+            HomeGenie.RaiseEvent(
                 Domains.HomeGenie_System,
                 Domains.HomeAutomation_HomeGenie_Automation,
                 ProgramBlock.Address.ToString(),
@@ -100,9 +97,10 @@ namespace HomeGenie.Automation.Engines
         {
         }
 
-        public ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
+        public override ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
         {
-            ProgramError error = new ProgramError() {
+            ProgramError error = new ProgramError()
+            {
                 CodeBlock = isTriggerBlock ? CodeBlockEnum.TC : CodeBlockEnum.CR,
                 Column = 0,
                 Line = 0,
@@ -113,7 +111,7 @@ namespace HomeGenie.Automation.Engines
             return error;
         }
 
-        public List<ProgramError> Compile()
+        public override List<ProgramError> Compile()
         {
             List<ProgramError> errors = new List<ProgramError>();
 
@@ -129,13 +127,14 @@ namespace HomeGenie.Automation.Engines
             {
                 // .ino source is stored in the ScriptSource property
                 File.WriteAllText(sketchFileName, ProgramBlock.ScriptSource);
-                // Makefile source is stored in the ScriptCondition property
-                File.WriteAllText(sketchMakefile, ProgramBlock.ScriptCondition);
+                // Makefile source is stored in the ScriptSetup property
+                File.WriteAllText(sketchMakefile, ProgramBlock.ScriptSetup);
                 errors = ArduinoAppFactory.CompileSketch(sketchFileName, sketchMakefile);
             }
             catch (Exception e)
-            { 
-                errors.Add(new ProgramError() {
+            {
+                errors.Add(new ProgramError()
+                {
                     Line = 0,
                     Column = 0,
                     ErrorMessage = "General failure: is 'arduino-mk' package installed?\n\n" + e.Message,
@@ -146,8 +145,5 @@ namespace HomeGenie.Automation.Engines
 
             return errors;
         }
-
-
     }
 }
-
