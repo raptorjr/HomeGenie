@@ -21,35 +21,27 @@
 */
 
 using System;
-using System.Threading;
 using System.Collections.Generic;
-
-using System.IO;
-using System.Reflection;
-using Microsoft.CSharp;
-using System.CodeDom.Compiler;
 using System.Xml.Serialization;
 
-using HomeGenie.Service;
-using HomeGenie.Automation.Scripting;
-using HomeGenie.Service.Constants;
-
-using IronPython.Hosting;
-using Microsoft.Scripting;
-using Microsoft.Scripting.Hosting;
-using Jint;
-using IronRuby;
-using System.Diagnostics;
-using HomeGenie.Automation.Engines;
 using Newtonsoft.Json;
 
+using HomeGenie.Automation.Scripting;
+using HomeGenie.Service.Constants;
+using HomeGenie.Automation.Engines;
+
 namespace HomeGenie.Automation
-{
+{    
+    public class MethodRunResult
+    {
+        public Exception Exception = null;
+        public object ReturnValue = null;
+    }
 
     [Serializable()]
     public class ProgramBlock
     {
-        private IProgramEngine csScriptEngine;
+        private IProgramEngine programEngine;
         private bool isProgramEnabled;
         private string codeType = "";
 
@@ -57,15 +49,8 @@ namespace HomeGenie.Automation
         public delegate void EnabledStateChangedEventHandler(object sender, bool isEnabled);
         public event EnabledStateChangedEventHandler EnabledStateChanged;
 
-        // TODO: v1.1 !!!IMPORTANT!!! deprecate this and move to WizardEngine.cs
-        // wizard script public members
-        public ConditionType ConditionType { get; set; }
-        public List<ProgramCondition> Conditions { get; set; }
-        public List<ProgramCommand> Commands { get; set; }
-
-        // TODO: v1.1 !!!IMPORTANT!!! refactor ScriptCondition to ScriptSetup
         // c# program public members
-        public string ScriptCondition { get; set; }
+        public string ScriptSetup { get; set; }
         public string ScriptSource { get; set; }
         public string ScriptErrors { get; set; }
 
@@ -76,13 +61,12 @@ namespace HomeGenie.Automation
         public string Description { get; set; }
         public string Group { get; set; }
         public List<ProgramFeature> Features  { get; set; }
+        public bool AutoRestartEnabled { get; set; }
 
         [XmlIgnore]
         public bool WillRun { get; set; }
         [XmlIgnore]
         public bool IsRunning { get; set; }
-        [XmlIgnore]
-        public bool LastConditionEvaluationResult { get; set; }
         [XmlIgnore]
         public object OperationLock = new object();
 
@@ -97,13 +81,9 @@ namespace HomeGenie.Automation
             Features = new List<ProgramFeature>();
 
             Type = "Wizard";
-            ScriptCondition = "";
+            ScriptSetup = "";
             ScriptSource = "";
             ScriptErrors = "";
-            //
-            Commands = new List<ProgramCommand>();
-            Conditions = new List<ProgramCondition>();
-            ConditionType = ConditionType.None;
             //
             isProgramEnabled = false;
             IsRunning = false;
@@ -116,33 +96,34 @@ namespace HomeGenie.Automation
             {
                 bool changed = codeType != value;
                 codeType = value;
-                if (changed || csScriptEngine == null)
+                if (changed || programEngine == null)
                 {
-                    if (csScriptEngine != null)
+                    if (programEngine != null)
                     {
-                        csScriptEngine.Unload();
-                        csScriptEngine = null;
+                        programEngine.Unload();
+                        programEngine = null;
                     }
                     switch (codeType.ToLower())
                     {
-                    case "csharp":
-                        csScriptEngine = new CSharpEngine(this);
-                        break;
-                    case "python":
-                        csScriptEngine = new PythonEngine(this);
-                        break;
-                    case "ruby":
-                        csScriptEngine = new RubyEngine(this);
-                        break;
-                    case "javascript":
-                        csScriptEngine = new JavascriptEngine(this);
-                        break;
-                    case "wizard":
-                        csScriptEngine = new WizardEngine(this);
-                        break;
-                    case "arduino":
-                        csScriptEngine = new ArduinoEngine(this);
-                        break;
+                        case "csharp":
+                            programEngine = new CSharpEngine(this);
+                            break;
+                        case "python":
+                            programEngine = new PythonEngine(this);
+                            break;
+                        case "javascript":
+                            programEngine = new JavascriptEngine(this);
+                            break;
+                        case "wizard":
+                            programEngine = new WizardEngine(this);
+                            break;
+                        case "arduino":
+                            programEngine = new ArduinoEngine(this);
+                            break;
+                        default:
+                            throw new NotImplementedException(
+                                string.Format("Program engine for type {0} is not implemented", codeType)
+                            );
                     }
                 }
             }
@@ -156,82 +137,26 @@ namespace HomeGenie.Automation
                 if (isProgramEnabled != value)
                 {
                     isProgramEnabled = value;
-                    LastConditionEvaluationResult = false;
                     if (isProgramEnabled)
                     {
                         ActivationTime = DateTime.UtcNow;
-                        if (csScriptEngine != null)
-                            csScriptEngine.Load();
+                        if (programEngine != null) programEngine.Load();
                     }
                     else
                     {
-                        if (csScriptEngine != null)
-                            csScriptEngine.Unload();
+                        if (programEngine != null) programEngine.Unload();
                     }
-                    if (EnabledStateChanged != null) EnabledStateChanged(this, value);
+
+                    if (EnabledStateChanged != null) EnabledStateChanged.Invoke(this, value);
                 }
             }
         }
 
-        [XmlIgnore,JsonIgnore]
+        [XmlIgnore, JsonIgnore]
         public ProgramEngineBase Engine
         {
-            get { return (ProgramEngineBase)csScriptEngine; }
+            get { return (ProgramEngineBase) programEngine; }
         }
-
-
-
-
-
-        // TODO: v1.1 !!!IMPORTANT!!! move this region to a ProgramEngineBase.cs class
-        #region ProgramBase methods
-
-        internal List<ProgramError>  Compile()
-        {
-            return csScriptEngine.Compile();
-        }
-
-        internal MethodRunResult Run(string options)
-        {
-            return csScriptEngine.Run(options);
-        }
-
-        internal ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
-        {
-            ProgramError error = new ProgramError() {
-                CodeBlock = isTriggerBlock ? "TC" : "CR",
-                Column = 0,
-                Line = 0,
-                ErrorNumber = "-1",
-                ErrorMessage = e.Message
-            };
-            // TODO: can it be null at this point???
-            if (csScriptEngine != null)
-                error = csScriptEngine.GetFormattedError(e, isTriggerBlock);
-            return error;
-        }
-
-        // TODO: v1.1 !!!IMPORTANT!!! rename to EvaluateStartupCode
-        internal MethodRunResult EvaluateCondition()
-        {
-            return csScriptEngine.EvaluateCondition();
-        }
-
-        #endregion
-
-
-
-
     }
-
-    public class ProgramError
-    {
-        public int Line { get; set; }
-        public int Column { get; set; }
-        public string ErrorMessage { get; set; }
-        public string ErrorNumber { get; set; }
-        public string CodeBlock { get; set; }
-    }
-
 }
 

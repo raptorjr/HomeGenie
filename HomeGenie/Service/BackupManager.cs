@@ -28,9 +28,6 @@ using System.Xml.Serialization;
 using System.Collections.Generic;
 using HomeGenie.Data;
 using HomeGenie.Service.Constants;
-using MIG.Config;
-using MIG;
-using System.Text;
 
 namespace HomeGenie.Service
 {
@@ -53,24 +50,16 @@ namespace HomeGenie.Service
             {
                 File.Delete(archiveName);
             }
-            // Add USERSPACE automation program binaries (csharp)
+            // Add USER-SPACE program files (only for arduino-type programs)
             foreach (var program in homegenie.ProgramManager.Programs)
             {
-                if (program.Address >= ProgramManager.USERSPACE_PROGRAMS_START && program.Address < ProgramManager.PACKAGE_PROGRAMS_START)
+                if (program.Type.ToLower() == "arduino" && (program.Address >= ProgramManager.USERSPACE_PROGRAMS_START && program.Address < ProgramManager.PACKAGE_PROGRAMS_START))
                 {
-                    string relFile = Path.Combine("programs/", program.Address + ".dll");
-                    if (File.Exists(relFile))
+                    string arduinoFolder = Path.Combine("programs", "arduino", program.Address.ToString());
+                    string[] filePaths = Directory.GetFiles(arduinoFolder);
+                    foreach (string f in filePaths)
                     {
-                        Utility.AddFileToZip(archiveName, relFile);
-                    }
-                    if (program.Type.ToLower() == "arduino")
-                    {
-                        string arduinoFolder = Path.Combine("programs", "arduino", program.Address.ToString());
-                        string[] filePaths = Directory.GetFiles(arduinoFolder);
-                        foreach (string f in filePaths)
-                        {
-                            Utility.AddFileToZip(archiveName, Path.Combine(arduinoFolder, Path.GetFileName(f)));
-                        }
+                        Utility.AddFileToZip(archiveName, Path.Combine(arduinoFolder, Path.GetFileName(f)));
                     }
                 }
             }
@@ -108,14 +97,14 @@ namespace HomeGenie.Service
 
         public bool RestoreConfiguration(string archiveFolder, string selectedPrograms)
         {
-
-            // TODO: move this to a separate class file method (eg. BackupHelper.cs)
             bool success = true;
             // Import automation groups
+            List<Group> automationGroups;
             var serializer = new XmlSerializer(typeof(List<Group>));
-            var reader = new StreamReader(Path.Combine(archiveFolder, "automationgroups.xml"));
-            var automationGroups = (List<Group>)serializer.Deserialize(reader);
-            reader.Close();
+            using (var reader = new StreamReader(Path.Combine(archiveFolder, "automationgroups.xml")))
+            {
+                automationGroups = (List<Group>)serializer.Deserialize(reader);
+            }
             foreach (var automationGroup in automationGroups)
             {
                 if (homegenie.AutomationGroups.Find(g => g.Name == automationGroup.Name) == null)
@@ -242,29 +231,29 @@ namespace HomeGenie.Service
                     );
                 }
             }
-            // Soft-reload system configuration from newely restored files and save config
+            // Soft-reload system configuration from newly restored files and save config
             homegenie.SoftReload();
             // Restore user-space automation programs
             serializer = new XmlSerializer(typeof(List<ProgramBlock>));
-            reader = new StreamReader(Path.Combine(archiveFolder, "programs.xml"));
-            var newProgramsData = (List<ProgramBlock>)serializer.Deserialize(reader);
-            reader.Close();
+            string programsDatabase = Path.Combine(archiveFolder, "programs.xml");
+            
+            // TODO: Deprecate Compat
+            Compat_526.FixProgramsDatabase(programsDatabase);
+
+            List<ProgramBlock> newProgramsData;
+            using (var reader = new StreamReader(programsDatabase))
+            {
+                newProgramsData = (List<ProgramBlock>)serializer.Deserialize(reader);
+            }
             foreach (var program in newProgramsData)
             {
                 var currentProgram = homegenie.ProgramManager.Programs.Find(p => p.Address == program.Address);
                 program.IsRunning = false;
-                // Only restore user space programs
-                if (selectedPrograms.Contains("," + program.Address.ToString() + ",") && program.Address >= ProgramManager.USERSPACE_PROGRAMS_START && program.Address < ProgramManager.PACKAGE_PROGRAMS_START)
+                // Only restore USER-SPACE PROGRAMS
+                if (selectedPrograms.Contains("," + program.Address + ",") && (program.Address >= ProgramManager.USERSPACE_PROGRAMS_START && program.Address < ProgramManager.PACKAGE_PROGRAMS_START))
                 {
-                    int oldPid = program.Address;
                     if (currentProgram == null)
                     {
-                        var newPid = ((currentProgram != null && currentProgram.Address == program.Address) ? homegenie.ProgramManager.GeneratePid() : program.Address);
-                        try
-                        {
-                            File.Copy(Path.Combine(archiveFolder, "programs", program.Address + ".dll"), Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "programs", newPid + ".dll"), true);
-                        } catch { }
-                        program.Address = newPid;
                         homegenie.ProgramManager.ProgramAdd(program);
                         homegenie.RaiseEvent(
                             Domains.HomeGenie_System,
@@ -275,16 +264,9 @@ namespace HomeGenie.Service
                             "= Added: Program '" + program.Name + "' (" + program.Address + ")"
                         );
                     }
-                    else if (currentProgram != null)
+                    else
                     {
                         homegenie.ProgramManager.ProgramRemove(currentProgram);
-                        try
-                        {
-                            File.Copy(Path.Combine(archiveFolder, "programs", program.Address + ".dll"), Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "programs", program.Address + ".dll"), true);
-                        }
-                        catch
-                        {
-                        }
                         homegenie.ProgramManager.ProgramAdd(program);
                         homegenie.RaiseEvent(
                             Domains.HomeGenie_System,
@@ -299,7 +281,7 @@ namespace HomeGenie.Service
                     // TODO: this is untested yet...
                     if (program.Type.ToLower() == "arduino")
                     {
-                        string sourceFolder = Path.Combine(archiveFolder, "programs", "arduino", oldPid.ToString());
+                        string sourceFolder = Path.Combine(archiveFolder, "programs", "arduino", program.Address.ToString());
                         string arduinoFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "programs", "arduino", program.Address.ToString());
                         if (Directory.Exists(arduinoFolder))
                             Directory.Delete(arduinoFolder, true);
@@ -309,10 +291,14 @@ namespace HomeGenie.Service
                             File.Copy(newPath, newPath.Replace(sourceFolder, arduinoFolder), true);
                         }
                     }
+                    else
+                    {
+                        homegenie.ProgramManager.CompileScript(program);
+                    }
                 }
                 else if (currentProgram != null && (program.Address < ProgramManager.USERSPACE_PROGRAMS_START || program.Address >= ProgramManager.PACKAGE_PROGRAMS_START))
                 {
-                    // Only restore Enabled/Disabled status of system programs and packages
+                    // Only restore Enabled/Disabled status for SYSTEM PROGRAMS and packages
                     currentProgram.IsEnabled = program.IsEnabled;
                 }
             }
@@ -323,7 +309,7 @@ namespace HomeGenie.Service
                 SourceModule.Master,
                 "HomeGenie Backup Restore",
                 Properties.InstallProgressMessage,
-                "= Status: Backup Restore " + (success ? "Succesful" : "Errors")
+                "= Status: Backup Restore " + (success ? "Successful" : "Errors")
             );
             homegenie.SaveData();
 
@@ -334,94 +320,7 @@ namespace HomeGenie.Service
         private bool UpdateSystemConfig(string configPath)
         {
             string configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "systemconfig.xml");
-            string configText = File.ReadAllText(Path.Combine(configPath, "systemconfig.xml"));
-            if (configText.IndexOf("<ServicePort>") > 0)
-            {
-                configText = configText.Replace("SystemConfiguration", "SystemConfiguration_1_0");
-                configText = configText.Replace("HomeGenieConfiguration", "HomeGenieConfiguration_1_0");
-                // This is old configuration file from HG < 1.1
-                SystemConfiguration_1_0 oldConfig;
-                SystemConfiguration newConfig = new SystemConfiguration();
-                try
-                {
-                    // Load old config
-                    var serializerOld = new XmlSerializer(typeof(SystemConfiguration_1_0));
-                    using (var reader = new StringReader(configText))
-                        oldConfig = (SystemConfiguration_1_0)serializerOld.Deserialize(reader);
-                    // Copy setting to the new config format
-                    newConfig.HomeGenie.Settings = oldConfig.HomeGenie.Settings;
-                    newConfig.HomeGenie.SystemName = oldConfig.HomeGenie.SystemName;
-                    newConfig.HomeGenie.Location = oldConfig.HomeGenie.Location;
-                    newConfig.HomeGenie.GUID = oldConfig.HomeGenie.GUID;
-                    newConfig.HomeGenie.EnableLogFile = oldConfig.HomeGenie.EnableLogFile;
-                    newConfig.HomeGenie.Statistics = new HomeGenieConfiguration.StatisticsConfiguration();
-                    newConfig.HomeGenie.Statistics.MaxDatabaseSizeMBytes = oldConfig.HomeGenie.Statistics.MaxDatabaseSizeMBytes;
-                    newConfig.HomeGenie.Statistics.StatisticsTimeResolutionSeconds = oldConfig.HomeGenie.Statistics.StatisticsTimeResolutionSeconds;
-                    newConfig.HomeGenie.Statistics.StatisticsUIRefreshSeconds = oldConfig.HomeGenie.Statistics.StatisticsUIRefreshSeconds;
-                    var webGateway = new Gateway() { Name = "WebServiceGateway", IsEnabled = true };
-                    webGateway.Options = new List<Option>();
-                    webGateway.Options.Add(new Option("BaseUrl", "/hg/html"));
-                    webGateway.Options.Add(new Option("HomePath", "html"));
-                    webGateway.Options.Add(new Option("Host", oldConfig.HomeGenie.ServiceHost));
-                    webGateway.Options.Add(new Option("Port", oldConfig.HomeGenie.ServicePort.ToString()));
-                    webGateway.Options.Add(new Option("Username", "admin"));
-                    webGateway.Options.Add(new Option("Password", oldConfig.HomeGenie.UserPassword));
-                    webGateway.Options.Add(new Option("HttpCacheIgnore.1", "^.*\\/pages\\/control\\/widgets\\/.*\\.(js|html)$"));
-                    webGateway.Options.Add(new Option("HttpCacheIgnore.2", "^.*\\/html\\/index.html"));
-                    webGateway.Options.Add(new Option("UrlAlias.1", "api/HomeAutomation.HomeGenie/Logging/RealTime.EventStream:events"));
-                    webGateway.Options.Add(new Option("UrlAlias.2", "hg/html/pages/control/widgets/homegenie/generic/images/socket_on.png:hg/html/pages/control/widgets/homegenie/generic/images/switch_on.png"));
-                    webGateway.Options.Add(new Option("UrlAlias.3", "hg/html/pages/control/widgets/homegenie/generic/images/socket_off.png:hg/html/pages/control/widgets/homegenie/generic/images/switch_off.png"));
-                    webGateway.Options.Add(new Option("UrlAlias.4", "hg/html/pages/control/widgets/homegenie/generic/images/siren.png:hg/html/pages/control/widgets/homegenie/generic/images/siren_on.png"));
-                    // TODO: EnableFileCaching value should be read from oldConfig.MIGService.EnableWebCache
-                    webGateway.Options.Add(new Option("EnableFileCaching", "false"));
-                    newConfig.MigService.Gateways.Add(webGateway);
-                    newConfig.MigService.Interfaces = oldConfig.MIGService.Interfaces;
-                    foreach(var iface in newConfig.MigService.Interfaces)
-                    {
-                        if (iface.Domain == "HomeAutomation.ZWave")
-                            iface.AssemblyName = "MIG.HomeAutomation.dll";
-                        if (iface.Domain == "HomeAutomation.Insteon")
-                            iface.AssemblyName = "MIG.HomeAutomation.dll";
-                        if (iface.Domain == "HomeAutomation.X10")
-                            iface.AssemblyName = "MIG.HomeAutomation.dll";
-                        if (iface.Domain == "HomeAutomation.W800RF")
-                            iface.AssemblyName = "MIG.HomeAutomation.dll";
-                        if (iface.Domain == "Controllers.LircRemote")
-                            iface.AssemblyName = "MIG.Controllers.dll";
-                        if (iface.Domain == "Media.CameraInput")
-                            iface.AssemblyName = "MIG.Media.dll";
-                        if (iface.Domain == "Protocols.UPnP")
-                            iface.AssemblyName = "MIG.Protocols.dll";
-                    }
-                    // Check for lircconfig.xml
-                    if (File.Exists(Path.Combine(configPath, "lircconfig.xml")))
-                    {
-                        File.Copy(Path.Combine(configPath, "lircconfig.xml"), Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib", "mig", "lircconfig.xml"), true);
-                    }
-                    // Update configuration file
-                    if (File.Exists(configFile))
-                    {
-                        File.Delete(configFile);
-                    }
-                    System.Xml.XmlWriterSettings ws = new System.Xml.XmlWriterSettings();
-                    ws.Indent = true;
-                    ws.Encoding = Encoding.UTF8;
-                    System.Xml.Serialization.XmlSerializer x = new System.Xml.Serialization.XmlSerializer(newConfig.GetType());
-                    System.Xml.XmlWriter wri = System.Xml.XmlWriter.Create(configFile, ws);
-                    x.Serialize(wri, newConfig);
-                    wri.Close();
-                }
-                catch (Exception e)
-                {
-                    MigService.Log.Error(e);
-                    return false;
-                }
-            }
-            else
-            {
-                // HG >= 1.1
-                File.Copy(Path.Combine(configPath, "systemconfig.xml"), configFile, true);
-            }
+            File.Copy(Path.Combine(configPath, "systemconfig.xml"), configFile, true);
             return true;
         }
 

@@ -81,7 +81,7 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
         $('#automationprograms_program_options_tab1 a').removeClass('ui-btn-active');
         $('#automationprograms_program_options_tab1 a').trigger('create');
         //
-        if (tabid == 0) {
+        if (tabid === 0) {
             $$.RefreshProgramOptions();
             $('#automationprograms_program_details').hide();
             $('#automationprograms_program_parameters').show();
@@ -240,12 +240,14 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
                         parameter: mp
                     };
                     var featureField = HG.Ui.GenerateWidget('widgets/' + mp.FieldType, context, function (handler) {
-                        handler.onChange = function (val) {
-                            var param = this.context.parameter;
-                            param.Value = val;
-                            param.NeedsUpdate = true;
-                            HG.WebApp.GroupModules.UpdateModule(this.context.module, null);
-                        };
+                        if (handler != null) {
+                            handler.onChange = function (val) {
+                                var param = this.context.parameter;
+                                param.Value = val;
+                                param.NeedsUpdate = true;
+                                HG.WebApp.GroupModules.UpdateModule(this.context.module, null);
+                            };
+                        }
                     });
                     pc++;
                 }
@@ -255,20 +257,7 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
         fieldparams.trigger('create');
     };
 
-    // TODO: deprecate this!??!
-    $$.UpdateProgramParameter = function (el) {
-        var parameter = el.attr('data-parameter-name');
-        var module = HG.WebApp.Utility.GetModuleByDomainAddress(HG.WebApp.ProgramEdit._CurrentProgram.Domain, HG.WebApp.ProgramEdit._CurrentProgram.Address);
-        for (var p = 0; p < module.Properties.length; p++) {
-            if (module.Properties[p].Name == parameter) {
-                module.Properties[p].Value = el.val();
-                module.Properties[p].NeedsUpdate = 'true';
-            }
-        }
-        HG.WebApp.GroupModules.UpdateModule(module, null);
-    };
-
-    $$.SetProgramType = function () {
+    $$.SetProgramType = function() {
         HG.WebApp.ProgramEdit._CurrentProgram.ScriptErrors = '';
         if (HG.WebApp.ProgramEdit._CurrentProgram.Type.toLowerCase() == 'arduino') {
             // in arduino type program we use editor1 for makefile, editor2 for main sketch file and editor3 for all other c++ files
@@ -331,9 +320,6 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
         } else if (HG.WebApp.ProgramEdit._CurrentProgram.Type.toLowerCase() == 'python') {
             editor1.setValue('');
             editor2.setValue('"""\nPython Automation Script\nExample for using Helper Classes:\nhg.Modules.WithName(\'Light 1\').On()\n"""\n')
-        } else if (HG.WebApp.ProgramEdit._CurrentProgram.Type.toLowerCase() == 'ruby') {
-            editor1.setValue('');
-            editor2.setValue('# Ruby Automation Script\n# Example for using Helper Classes:\n# hg.Modules.WithName(\'Light 1\').On()\n');
         } else if (HG.WebApp.ProgramEdit._CurrentProgram.Type.toLowerCase() == 'javascript') {
             editor1.setValue('');
             editor2.setValue('// Javascript Automation Script\n// Example for using Helper Classes:\n// hg.modules.withName(\'Light 1\').on();\n');
@@ -378,9 +364,6 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
             } else if (HG.WebApp.ProgramEdit._CurrentProgram.Type.toLowerCase() == 'python') {
                 editor2.setOption('mode', 'text/x-python');
                 editor1.setOption('mode', 'text/x-python');
-            } else if (HG.WebApp.ProgramEdit._CurrentProgram.Type.toLowerCase() == 'ruby') {
-                editor2.setOption('mode', 'text/x-ruby');
-                editor1.setOption('mode', 'text/x-ruby');
             } else if (HG.WebApp.ProgramEdit._CurrentProgram.Type.toLowerCase() == 'javascript') {
                 editor2.setOption('mode', 'text/javascript');
                 editor1.setOption('mode', 'text/javascript');
@@ -450,10 +433,12 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
         $('#configure_programslist').listview();
         $('#configure_programslist').listview('refresh');
         //
-        $("#configure_programslist li a").bind("click", function () {
+        $('#configure_programslist li a.programitem').bind("click", function () {
             HG.WebApp.ProgramEdit._CurrentProgram.Domain = $(this).attr('data-program-domain');
             HG.WebApp.ProgramEdit._CurrentProgram.Address = $(this).attr('data-program-address');
-            $$.UpdateOptionsPopup();
+            //$$.UpdateOptionsPopup();
+            $$.EditProgram();
+            $.mobile.changePage($('#page_automation_editprogram'), {transition: 'fade', changeHash: true});
         });
     };
 
@@ -489,26 +474,13 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
                 $$.RefreshProgramOptions();
                 $$.RefreshProgramDetails();
 
-                var hasdetails = true;
-                if ($('#automationprograms_program_details').text().trim() == '') {
-                    $('#automationprograms_program_options_tab1').css('visibility', 'hidden');
-                    hasdetails = false;
-                } else {
-                    $('#automationprograms_program_options_tab1').css('visibility', '');
-                }
-                if ($('#automationprograms_program_parameters').prop('data-flag-hasoptions') == false) {
-                    $('#automationprograms_program_options_tab0').css('visibility', 'hidden');
-                    if (hasdetails) {
+                $('#automationprograms_program_options_tab1').hide();
+                if ($('#automationprograms_program_details').text().trim().length > 0) {
+                    $('#automationprograms_program_options_tab1').show();
+                    if ($('#automationprograms_program_parameters').prop('data-flag-hasoptions') == false) {
                         $$.SetOptionsTab(1);
-                    } else {
-                        $('#automationprograms_program_parameters').hide();
-                        $('#automationprograms_program_details').hide();
-                    }
-                } else {
-                    $('#automationprograms_program_options_tab0').css('visibility', '');
-                    $$.SetOptionsTab(0);
-                }
-
+                    } else $$.SetOptionsTab(0);
+                } else $$.SetOptionsTab(0);
                 $('#automationprograms_program_details').scrollTop(0);
                 $('#automationprograms_program_parameters').scrollTop(0);
                 $('#automationprograms_program_options').popup('open', {'transition': 'slidedown'});
@@ -539,12 +511,12 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
             if (propObj != null) statusProperty = propObj.Value;
         }
         //
-        if (statusProperty == 'Running') {
+        if (statusProperty === 'Running') {
             statusColor = 'green';
-        } else if (statusProperty == 'Background') {
+        } else if (statusProperty === 'Background') {
             statusColor = 'blue';
         } else if (prog.IsEnabled) {
-            if (hasErrors)
+            if (hasErrors || statusProperty === 'Interrupted')
                 statusColor = 'red';
             else
                 statusColor = 'yellow';
@@ -557,7 +529,7 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
 
     $$.EditProgram = function () {
         if (editor1 == null) {
-            editor1 = CodeMirror.fromTextArea(document.getElementById('automation_program_scriptcondition'), {
+            editor1 = CodeMirror.fromTextArea(document.getElementById('automation_program_scriptsetup'), {
                 lineNumbers: true,
                 matchBrackets: true,
                 autoCloseBrackets: true,
@@ -615,6 +587,10 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
                 theme: 'ambiance'
             });
             $(editor3.getWrapperElement()).hide();
+            // mark clean
+            editor1.markClean();
+            editor2.markClean();
+            editor3.markClean();
         }
         $('#automation_programgroup').empty();
         $('#automation_programgroup').append('<option value="">(select program group)</option>');
@@ -623,33 +599,38 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
         }
         $('#automation_programgroup').trigger('create');
         //
+        var currentProgram = HG.WebApp.ProgramEdit._CurrentProgram;
         for (i = 0; i < HG.WebApp.Data.Programs.length; i++) {
-            if (HG.WebApp.Data.Programs[i].Address == HG.WebApp.ProgramEdit._CurrentProgram.Address) {
-                HG.WebApp.ProgramEdit._CurrentProgram.Type = HG.WebApp.Data.Programs[i].Type;
-                HG.WebApp.ProgramEdit._CurrentProgram.Group = HG.WebApp.Data.Programs[i].Group;
-                HG.WebApp.ProgramEdit._CurrentProgram.Name = HG.WebApp.Data.Programs[i].Name;
-                HG.WebApp.ProgramEdit._CurrentProgram.Description = HG.WebApp.Data.Programs[i].Description;
-                HG.WebApp.ProgramEdit._CurrentProgram.Address = HG.WebApp.Data.Programs[i].Address;
-                HG.WebApp.ProgramEdit._CurrentProgram.Domain = HG.WebApp.Data.Programs[i].Domain;
-                HG.WebApp.ProgramEdit._CurrentProgram.IsEnabled = HG.WebApp.Data.Programs[i].IsEnabled;
-                HG.WebApp.ProgramEdit._CurrentProgram.Conditions = HG.WebApp.Data.Programs[i].Conditions;
-                HG.WebApp.ProgramEdit._CurrentProgram.Commands = HG.WebApp.Data.Programs[i].Commands;
+            if (HG.WebApp.Data.Programs[i].Address == currentProgram.Address) {
+                var program = HG.WebApp.Data.Programs[i];
+                currentProgram.Type = program.Type;
+                currentProgram.Group = program.Group;
+                currentProgram.Name = program.Name;
+                currentProgram.Description = program.Description;
+                currentProgram.Address = program.Address;
+                currentProgram.Domain = program.Domain;
+                currentProgram.IsEnabled = program.IsEnabled;
+                currentProgram.AutoRestartEnabled = program.AutoRestartEnabled;
                 //
-                $('#automation_programname').val(HG.WebApp.ProgramEdit._CurrentProgram.Name);
-                $('#automation_programdescription').val(HG.WebApp.ProgramEdit._CurrentProgram.Description);
+                $('#automation_programname').val(currentProgram.Name);
+                $('#automation_programdescription').val(currentProgram.Description);
+                
+                $('#automation_program_autorestartenabled').prop('checked', currentProgram.AutoRestartEnabled);
+                $('#automation_program_autorestartenabled').checkboxradio();
+                $('#automation_program_autorestartenabled').checkboxradio('refresh');
                 //
-                $('#automation_programgroup').val(HG.WebApp.ProgramEdit._CurrentProgram.Group);
+                $('#automation_programgroup').val(currentProgram.Group);
                 $('#automation_programgroup').selectmenu().selectmenu('refresh');
                 //
-                HG.WebApp.ProgramEdit._CurrentProgram.ScriptCondition = HG.WebApp.Data.Programs[i].ScriptCondition;
-                HG.WebApp.ProgramEdit._CurrentProgram.ScriptSource = HG.WebApp.Data.Programs[i].ScriptSource;
+                currentProgram.ScriptSetup = program.ScriptSetup;
+                currentProgram.ScriptSource = program.ScriptSource;
                 //
-                $('#automation_programtype').val(HG.WebApp.ProgramEdit._CurrentProgram.Type);
+                $('#automation_programtype').val(currentProgram.Type);
                 $('#automation_programtype').selectmenu().selectmenu('refresh');
                 $$.RefreshProgramType();
                 //
-                editor1.setValue(HG.WebApp.ProgramEdit._CurrentProgram.ScriptCondition);
-                editor2.setValue(HG.WebApp.ProgramEdit._CurrentProgram.ScriptSource);
+                editor1.setValue(currentProgram.ScriptSetup);
+                editor2.setValue(currentProgram.ScriptSource);
                 // clear old edit history
                 editor1.clearHistory();
                 editor1.markClean();
@@ -658,31 +639,37 @@ HG.WebApp.ProgramsList = HG.WebApp.ProgramsList || new function () { var $$ = th
                 editor3.clearHistory();
                 editor3.markClean();
                 //
-                HG.WebApp.ProgramEdit._CurrentProgram.ConditionType = HG.WebApp.Data.Programs[i].ConditionType;
-                //
-                switch (HG.WebApp.ProgramEdit._CurrentProgram.ConditionType) {
-                    case 2:
-                        HG.WebApp.ProgramEdit._CurrentProgram.ConditionType = "OnSwitchFalse";
-                        break;
-                    case 3:
-                        HG.WebApp.ProgramEdit._CurrentProgram.ConditionType = "Once";
-                        break;
-                    case 4:
-                        HG.WebApp.ProgramEdit._CurrentProgram.ConditionType = "OnTrue";
-                        break;
-                    case 5:
-                        HG.WebApp.ProgramEdit._CurrentProgram.ConditionType = "OnFalse";
-                        break;
-                    default:
-                        HG.WebApp.ProgramEdit._CurrentProgram.ConditionType = "OnSwitchTrue";
-                        break;
+                if (program.Type.toLowerCase() === 'wizard') {
+                    var script = {ConditionType: '', Conditions: [], Commands: []};
+                    try { script = JSON.parse(program.ScriptSource); } catch (e) { }
+                    currentProgram.ConditionType = script.ConditionType;
+                    currentProgram.Conditions = script.Conditions;
+                    currentProgram.Commands = script.Commands;
+                    //
+                    switch (currentProgram.ConditionType) {
+                        case 2:
+                            currentProgram.ConditionType = "OnSwitchFalse";
+                            break;
+                        case 3:
+                            currentProgram.ConditionType = "Once";
+                            break;
+                        case 4:
+                            currentProgram.ConditionType = "OnTrue";
+                            break;
+                        case 5:
+                            currentProgram.ConditionType = "OnFalse";
+                            break;
+                        default:
+                            currentProgram.ConditionType = "OnSwitchTrue";
+                            break;
+                    }
+                    //
+                    $('#automation_conditiontype').val(currentProgram.ConditionType);
+                    $('#automation_conditiontype').selectmenu();
+                    $('#automation_conditiontype').selectmenu('refresh');
                 }
                 //
-                $('#automation_conditiontype').val(HG.WebApp.ProgramEdit._CurrentProgram.ConditionType);
-                $('#automation_conditiontype').selectmenu();
-                $('#automation_conditiontype').selectmenu('refresh');
-                //
-                HG.WebApp.ProgramEdit._CurrentProgram.ScriptErrors = HG.WebApp.Data.Programs[i].ScriptErrors;
+                currentProgram.ScriptErrors = program.ScriptErrors;
                 //
                 HG.WebApp.ProgramEdit.RefreshProgramOptions();
                 break;

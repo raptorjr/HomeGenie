@@ -24,19 +24,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Text;
-using System.Timers;
 using System.Xml.Serialization;
 
-using System.Diagnostics;
 using System.Net.Sockets;
 using System.Threading;
-
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-
+using System.Xml;
 using OpenSource.UPnP;
 
 using HomeGenie.Automation;
@@ -47,6 +41,7 @@ using HomeGenie.Automation.Scheduler;
 
 using MIG;
 using MIG.Gateways;
+using NLog;
 
 namespace HomeGenie.Service
 {
@@ -54,6 +49,8 @@ namespace HomeGenie.Service
     public class HomeGenieService
     {
         #region Private Fields declaration
+
+        private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
         private MigService migService;
         private WebServiceGateway webGateway;
@@ -722,6 +719,14 @@ namespace HomeGenie.Service
 
         #region Initialization and Data Persistence
 
+        private Func<Type,Exception,bool> UpdateDatabaseErrorHandler = new Func<Type, Exception, bool>((t, e) =>
+            {
+                LogError(Domains.HomeAutomation_HomeGenie,
+                    string.Format("UpdateXmlDatabase<{0}>()", t.FullName), e.Message, "StackTrace",
+                    e.StackTrace);
+                return false;
+            });
+
         public bool UpdateGroupsDatabase(string namePrefix)
         {
             var groups = controlGroups;
@@ -733,32 +738,8 @@ namespace HomeGenie.Service
             {
                 namePrefix = ""; // default fallback to Control Groups groups.xml - no prefix
             }
-            //
-            bool success = false;
-            try
-            {
-                string filePath = Path.Combine(
-                                      AppDomain.CurrentDomain.BaseDirectory,
-                                      namePrefix.ToLower() + "groups.xml"
-                                  );
-                if (File.Exists(filePath))
-                {
-                    File.Delete(filePath);
-                }
-                var settings = new System.Xml.XmlWriterSettings();
-                settings.Indent = true;
-                settings.Encoding = Encoding.UTF8;
-                var serializer = new System.Xml.Serialization.XmlSerializer(groups.GetType());
-                var writer = System.Xml.XmlWriter.Create(filePath, settings);
-                serializer.Serialize(writer, groups);
-                writer.Close();
-                //
-                success = true;
-            }
-            catch
-            {
-            }
-            return success;
+            string filename = namePrefix.ToLower() + "groups.xml";
+            return Utility.UpdateXmlDatabase(groups, filename, UpdateDatabaseErrorHandler);
         }
 
         public bool UpdateModulesDatabase()
@@ -781,28 +762,17 @@ namespace HomeGenie.Service
                                 && parameter.Name != Properties.ProgramStatus
                                 && parameter.Name != Properties.RuntimeError)
                             {
-                                if (!String.IsNullOrEmpty(parameter.Value))
+                                if (!string.IsNullOrEmpty(parameter.Value))
                                     parameter.Value = StringCipher.Encrypt(parameter.Value, GetPassPhrase());
                             }
                         }
                     }
-                    string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "modules.xml");
-                    if (File.Exists(filePath))
-                    {
-                        File.Delete(filePath);
-                    }
-                    var settings = new System.Xml.XmlWriterSettings();
-                    settings.Indent = true;
-                    settings.Encoding = Encoding.UTF8;
-                    var serializer = new System.Xml.Serialization.XmlSerializer(clonedModules.GetType());
-                    var writer = System.Xml.XmlWriter.Create(filePath, settings);
-                    serializer.Serialize(writer, clonedModules);
-                    writer.Close();
-                    success = true;
+                    success = Utility.UpdateXmlDatabase(clonedModules, "modules.xml", UpdateDatabaseErrorHandler);
                 }
                 catch (Exception ex)
                 {
-                    LogError(Domains.HomeAutomation_HomeGenie, "UpdateModulesDatabase()", ex.Message, "Exception.StackTrace", ex.StackTrace);
+                    LogError(Domains.HomeAutomation_HomeGenie, "UpdateModulesDatabase()", ex.Message,
+                        "Exception.StackTrace", ex.StackTrace);
                 }
             }
             return success;
@@ -810,54 +780,12 @@ namespace HomeGenie.Service
 
         public bool UpdateProgramsDatabase()
         {
-            bool success = false;
-            try
-            {
-                string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "programs.xml");
-                if (File.Exists(filePath))
-                {
-                    File.Delete(filePath);
-                }
-                var settings = new System.Xml.XmlWriterSettings();
-                settings.Indent = true;
-                settings.Encoding = Encoding.UTF8;
-                var serializer = new System.Xml.Serialization.XmlSerializer(masterControlProgram.Programs.GetType());
-                var writer = System.Xml.XmlWriter.Create(filePath, settings);
-                serializer.Serialize(writer, masterControlProgram.Programs);
-                writer.Close();
-
-                success = true;
-            }
-            catch
-            {
-            }
-            return success;
+            return Utility.UpdateXmlDatabase(masterControlProgram.Programs, "programs.xml", UpdateDatabaseErrorHandler);
         }
 
         public bool UpdateSchedulerDatabase()
         {
-            bool success = false;
-            try
-            {
-                string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "scheduler.xml");
-                if (File.Exists(filePath))
-                {
-                    File.Delete(filePath);
-                }
-                var settings = new System.Xml.XmlWriterSettings();
-                settings.Indent = true;
-                settings.Encoding = Encoding.UTF8;
-                var serializer = new System.Xml.Serialization.XmlSerializer(masterControlProgram.SchedulerService.Items.GetType());
-                var writer = System.Xml.XmlWriter.Create(filePath, settings);
-                serializer.Serialize(writer, masterControlProgram.SchedulerService.Items);
-                writer.Close();
-
-                success = true;
-            }
-            catch
-            {
-            }
-            return success;
+            return Utility.UpdateXmlDatabase(masterControlProgram.SchedulerService.Items, "scheduler.xml", UpdateDatabaseErrorHandler);
         }
 
         /// <summary>
@@ -1003,8 +931,11 @@ namespace HomeGenie.Service
             masterControlProgram = new ProgramManager(this);
             try
             {
+                string programsDatabase = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "programs.xml");
+                // TODO: Deprecate Compat
+                Compat_526.FixProgramsDatabase(programsDatabase);
                 var serializer = new XmlSerializer(typeof(List<ProgramBlock>));
-                using (var reader = new StreamReader(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "programs.xml")))
+                using (var reader = new StreamReader(programsDatabase))
                 {
                     var programs = (List<ProgramBlock>)serializer.Deserialize(reader);
                     foreach (var program in programs)
@@ -1262,7 +1193,15 @@ namespace HomeGenie.Service
                 {
                     module.Properties.Sort((ModuleParameter p1, ModuleParameter p2) =>
                     {
-                        return p1.Name.CompareTo(p2.Name);
+                        int c = -1;
+                        try
+                        {
+                            c = p1.Name.CompareTo(p2.Name);
+                        }
+                        catch (Exception e)
+                        {
+                        }
+                        return c;
                     });
                 }
                 //
@@ -1270,18 +1209,24 @@ namespace HomeGenie.Service
                 //
                 systemModules.Sort((Module m1, Module m2) =>
                 {
-                    System.Text.RegularExpressions.Regex re = new System.Text.RegularExpressions.Regex(@"([a-zA-Z]+)(\d+)");
-                    System.Text.RegularExpressions.Match result1 = re.Match(m1.Address);
-                    System.Text.RegularExpressions.Match result2 = re.Match(m2.Address);
+                    int c = -1;
+                    try
+                    {
+                        System.Text.RegularExpressions.Regex re = new System.Text.RegularExpressions.Regex(@"([a-zA-Z]+)(\d+)");
+                        System.Text.RegularExpressions.Match result1 = re.Match(m1.Address);
+                        System.Text.RegularExpressions.Match result2 = re.Match(m2.Address);
 
-                    string alphaPart1 = result1.Groups[1].Value.PadRight(8, '0');
-                    string numberPart1 = (String.IsNullOrWhiteSpace(result1.Groups[2].Value) ? m1.Address.PadLeft(8, '0') : result1.Groups[2].Value.PadLeft(8, '0'));
-                    string alphaPart2 = result2.Groups[1].Value.PadRight(8, '0');
-                    string numberPart2 = (String.IsNullOrWhiteSpace(result2.Groups[2].Value) ? m2.Address.PadLeft(8, '0') : result2.Groups[2].Value.PadLeft(8, '0'));
+                        string alphaPart1 = result1.Groups[1].Value.PadRight(8, '0');
+                        string numberPart1 = (String.IsNullOrWhiteSpace(result1.Groups[2].Value) ? m1.Address.PadLeft(8, '0') : result1.Groups[2].Value.PadLeft(8, '0'));
+                        string alphaPart2 = result2.Groups[1].Value.PadRight(8, '0');
+                        string numberPart2 = (String.IsNullOrWhiteSpace(result2.Groups[2].Value) ? m2.Address.PadLeft(8, '0') : result2.Groups[2].Value.PadLeft(8, '0'));
 
-                    string d1 = m1.Domain + "|" + alphaPart1 + numberPart1;
-                    string d2 = m2.Domain + "|" + alphaPart2 + numberPart2;
-                    return d1.CompareTo(d2);
+                        string d1 = m1.Domain + "|" + alphaPart1 + numberPart1;
+                        string d2 = m2.Domain + "|" + alphaPart2 + numberPart2;
+
+                        c = d1.CompareTo(d2);
+                    } catch(Exception e) {}
+                    return c;
                 });
 
             }
@@ -1438,7 +1383,7 @@ namespace HomeGenie.Service
                 {
                     systemConfiguration = (SystemConfiguration)serializer.Deserialize(reader);
                     // setup logging
-                    if (!String.IsNullOrEmpty(systemConfiguration.HomeGenie.EnableLogFile) && systemConfiguration.HomeGenie.EnableLogFile.ToLower().Equals("true"))
+                    if (!string.IsNullOrEmpty(systemConfiguration.HomeGenie.EnableLogFile) && systemConfiguration.HomeGenie.EnableLogFile.ToLower().Equals("true"))
                     {
                         SystemLogger.Instance.OpenLog();
                     }
@@ -1455,13 +1400,12 @@ namespace HomeGenie.Service
                     {
                         try
                         {
-                            if (!String.IsNullOrEmpty(parameter.Value)) parameter.Value = StringCipher.Decrypt(
-                                    parameter.Value,
-                                    GetPassPhrase()
-                                );
+                            if (!string.IsNullOrEmpty(parameter.Value))
+                                parameter.Value = StringCipher.Decrypt(parameter.Value, GetPassPhrase());
                         }
-                        catch
+                        catch (Exception ex)
                         {
+                            Log.Error(ex);
                         }
                     }
                 }

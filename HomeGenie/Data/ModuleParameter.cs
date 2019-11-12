@@ -22,12 +22,10 @@
 
 using System;
 using System.Globalization;
+using System.Threading;
+using System.Xml.Serialization;
 
 using Newtonsoft.Json;
-using System.Xml.Serialization;
-using HomeGenie.Service;
-using HomeGenie.Service.Logging;
-using System.Threading;
 
 namespace HomeGenie.Data
 {
@@ -127,7 +125,6 @@ namespace HomeGenie.Data
         {
             get
             {
-
                 double v = 0;
                 if (this.Value != null && !double.TryParse(this.Value.Replace(",", "."), NumberStyles.Float | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out v)) v = 0;
                 return v;

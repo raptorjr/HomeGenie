@@ -4,18 +4,18 @@
 
 [Setup]
 AppName=HomeGenie
-AppVerName=HomeGenie 1.1 beta (r526)
-AppPublisher=GenieLabs
-AppPublisherURL=http://www.homegenie.it
-AppVersion=1.1 beta (r526)
+AppVerName=HomeGenie {%APPVEYOR_REPO_TAG_NAME|1.2-dev}
+AppPublisher=G-Labs
+AppPublisherURL=https://glabs.it
+AppVersion={%APPVEYOR_REPO_TAG_NAME|1.2-dev}
 DefaultDirName={pf}\HomeGenie
 DefaultGroupName=HomeGenie
 Compression=lzma
 SolidCompression=yes
 ; Win2000 or higher
 MinVersion=5.0
-LicenseFile=..\..\LICENCE.TXT
-;InfoAfterFile=..\..\README.TXT
+LicenseFile=..\..\HomeGenie\bin\Debug\LICENCE.TXT
+;InfoAfterFile=..\..\HomeGenie\bin\Debug\README.TXT
 
 
 
@@ -29,7 +29,7 @@ PrivilegesRequired=admin
 ; registry. On all other architectures it will install in "32-bit mode".
 ArchitecturesInstallIn64BitMode=x64 ia64
 ;WindowVisible=True
-AppCopyright=(c) 2011-2017 G-Labs - info@homegenie.it
+AppCopyright=(c) 2011-2018 G-Labs - info@homegenie.it
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -172,7 +172,7 @@ begin
   end;
   
   if not IsDotNetDetected('v4.5', 0) then begin
-     MsgBox('HomeGenie requires Microsoft .NET Framework 4.5.'#13#13
+     MsgBox('HomeGenie requires Microsoft .NET Framework >= 4.5.'#13#13
          'Please use Windows Update to install this version,'#13
          'and then re-run the HomeGenie setup program.', mbInformation, MB_OK);
      Result := false;
@@ -184,8 +184,9 @@ begin
 end;
 
 [Files]
-Source: "C:\Program Files\ISTool\isxdl.dll"; Flags: dontcopy
-Source: ".\Drivers\USB_ActiveHome_Interface\*"; DestDir: "{app}\Drivers\LibUsb_MarmitekCM15Pro"; Flags: ignoreversion recursesubdirs
+;Source: "C:\Program Files\ISTool\isxdl.dll"; Flags: dontcopy
+Source: ".\Drivers\USB_ActiveHome_Interface\*"; DestDir: "{app}\Drivers\LibUsb_CM15"; Flags: ignoreversion recursesubdirs
+Source: ".\Drivers\USB_Transceiver\*"; DestDir: "{app}\Drivers\LibUsb_CM19"; Flags: ignoreversion recursesubdirs
 Source: "..\..\HomeGenie\bin\Debug\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "..\..\HomeGenie\bin\Debug\HomeGenie.exe"; DestDir: "{app}"; Flags: ignoreversion replacesameversion
 Source: "..\..\HomeGenie\bin\Debug\README.TXT"; DestDir: "{app}"; Flags: ignoreversion replacesameversion
@@ -198,16 +199,16 @@ Type: files; Name: "{app}\SQLite.Interop.dll";
 ;Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; 
 
 [Icons]
-Name: "{group}\HomeGenie 1.1 beta (r526)"; Filename: "{app}\HomeGenieManager.exe"
-Name: "{group}\Uninstall HomeGenie 1.1 beta (r526)"; Filename: "{uninstallexe}"
+Name: "{group}\HomeGenie {%APPVEYOR_REPO_TAG_NAME|1.2-dev}"; Filename: "{app}\HomeGenieManager.exe"
+Name: "{group}\Uninstall HomeGenie {%APPVEYOR_REPO_TAG_NAME|1.2-dev}"; Filename: "{uninstallexe}"
 Name: "{commondesktop}\HomeGenie"; Filename: "{app}\HomeGenieManager.exe"
 
 [Run]
 ;Filename: "rundll32"; Parameters: "libusb0.dll,usb_touch_inf_file_np_rundll {win}\inf\input.inf"
 
 ; Install drivers and service, then start it
-;Filename: "rundll32"; Parameters: "libusb0.dll,usb_install_driver_np_rundll {app}\Drivers\LibUsb_MarmitekCM15Pro\X10_USB_ActiveHome_(ACPI-compliant).inf"; StatusMsg: "Installing driver (this may take a few seconds) ..."
-Filename: "{app}\Drivers\LibUsb_MarmitekCM15Pro\InstallDriver.exe"; WorkingDir: "{app}"; Flags: hidewizard; Description: "X10 driver install"; StatusMsg: "Installing X10 driver"
+Filename: "{app}\Drivers\LibUsb_CM15\InstallDriver.exe"; WorkingDir: "{app}"; Flags: hidewizard; Description: "X10 CM15 driver"; StatusMsg: "Installing X10 CM15 driver"
+Filename: "{app}\Drivers\LibUsb_CM19\InstallDriver.exe"; WorkingDir: "{app}"; Flags: hidewizard; Description: "X10 CM19 driver"; StatusMsg: "Installing X10 CM19 driver"
 Filename: "{app}\HomeGenieService.exe"; Parameters: "--install"; WorkingDir: "{app}"; Flags: waituntilterminated runhidden; StatusMsg: "Registering HomeGenie Windows Service..."
 Filename: "net.exe"; Parameters: "start HomeGenieService"; Flags: waituntilterminated runhidden; Description: "Starting HomeGenie service"; StatusMsg: "Starting HomeGenie Service..."
 Filename: "{app}\HomeGenieManager.exe"; WorkingDir: "{app}"; Flags: nowait shellexec runminimized

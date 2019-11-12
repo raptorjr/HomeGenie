@@ -21,16 +21,19 @@
  */
 
 using System;
-using Microsoft.Scripting.Hosting;
-using HomeGenie.Automation.Scripting;
-using IronPython.Hosting;
 using System.Collections.Generic;
+
+using IronPython.Hosting;
+
+using Microsoft.Scripting.Hosting;
+
+using HomeGenie.Automation.Scripting;
 
 namespace HomeGenie.Automation.Engines
 {
     public class PythonEngine : ProgramEngineBase, IProgramEngine
     {
-        internal ScriptEngine scriptEngine;
+        private ScriptEngine scriptEngine;
         private ScriptScope scriptScope;
         private ScriptingHost hgScriptingHost;
 
@@ -54,29 +57,29 @@ namespace HomeGenie.Automation.Engines
         {
             Unload();
 
-            if (homegenie == null)
+            if (HomeGenie == null)
                 return false;
 
             scriptEngine = Python.CreateEngine();
 
             hgScriptingHost = new ScriptingHost();
-            hgScriptingHost.SetHost(homegenie, programBlock.Address);
+            hgScriptingHost.SetHost(HomeGenie, ProgramBlock.Address);
             dynamic scope = scriptScope = scriptEngine.CreateScope();
             scope.hg = hgScriptingHost;
 
             return true;
         }
 
-        public MethodRunResult EvaluateCondition()
+        public override MethodRunResult Setup()
         {
             MethodRunResult result = null;
-            string pythonScript = programBlock.ScriptCondition;
+            string pythonScript = ProgramBlock.ScriptSetup;
             result = new MethodRunResult();
             try
             {
                 var sh = (scriptScope as dynamic).hg as ScriptingHost;
                 scriptEngine.Execute(pythonScript, scriptScope);
-                result.ReturnValue = sh.executeProgramCode || programBlock.WillRun;
+                result.ReturnValue = sh.ExecuteProgramCode || ProgramBlock.WillRun;
             }
             catch (Exception e)
             {
@@ -85,10 +88,10 @@ namespace HomeGenie.Automation.Engines
             return result;
         }
 
-        public MethodRunResult Run(string options)
+        public override MethodRunResult Run(string options)
         {
             MethodRunResult result = null;
-            string pythonScript = programBlock.ScriptSource;
+            string pythonScript = ProgramBlock.ScriptSource;
             result = new MethodRunResult();
             try
             {
@@ -103,14 +106,14 @@ namespace HomeGenie.Automation.Engines
 
         public void Reset()
         {
-            if (hgScriptingHost != null)
-                hgScriptingHost.Reset();
+            if (hgScriptingHost != null) hgScriptingHost.Reset();
         }
 
-        public ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
+        public override ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
         {
-            ProgramError error = new ProgramError() {
-                CodeBlock = isTriggerBlock ? "TC" : "CR",
+            ProgramError error = new ProgramError()
+            {
+                CodeBlock = isTriggerBlock ? CodeBlockEnum.TC : CodeBlockEnum.CR,
                 Column = 0,
                 Line = 0,
                 ErrorNumber = "-1",
@@ -120,23 +123,23 @@ namespace HomeGenie.Automation.Engines
             if (message.Length > 2)
             {
                 int line = 0;
-                int.TryParse(message[1].Substring(5), out line);
+                Int32.TryParse(message[1].Substring(5), out line);
                 error.Line = line;
             }
             return error;
         }
 
-        public List<ProgramError> Compile()
+        public override List<ProgramError> Compile()
         {
             List<ProgramError> errors = new List<ProgramError>();
 
             var engine = Python.CreateEngine();
-            var source = scriptEngine.CreateScriptSourceFromString(programBlock.ScriptCondition);
-            var errorListener = new ScriptEngineErrors("TC");
+            var source = scriptEngine.CreateScriptSourceFromString(ProgramBlock.ScriptSetup);
+            var errorListener = new ScriptEngineErrors(CodeBlockEnum.TC);
             source.Compile(errorListener);
             errors.AddRange(errorListener.Errors);
-            errorListener = new ScriptEngineErrors("CR");
-            source = scriptEngine.CreateScriptSourceFromString(programBlock.ScriptSource);
+            errorListener = new ScriptEngineErrors(CodeBlockEnum.CR);
+            source = scriptEngine.CreateScriptSourceFromString(ProgramBlock.ScriptSource);
             source.Compile(errorListener);
             errors.AddRange(errorListener.Errors);
             engine.Runtime.Shutdown();
@@ -146,4 +149,3 @@ namespace HomeGenie.Automation.Engines
         }
     }
 }
-

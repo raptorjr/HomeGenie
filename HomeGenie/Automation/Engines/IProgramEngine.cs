@@ -22,7 +22,6 @@
 
 using System;
 using System.Collections.Generic;
-using HomeGenie.Automation.Scripting;
 
 namespace HomeGenie.Automation.Engines
 {
@@ -32,8 +31,7 @@ namespace HomeGenie.Automation.Engines
         bool Load();
 
         List<ProgramError> Compile();
-        // TODO: v1.1 !!!IMPORTANT!!! rename to EvaluateStartupCode
-        MethodRunResult EvaluateCondition();
+        MethodRunResult Setup();
         MethodRunResult Run(string options);
 
         void Reset();
@@ -41,4 +39,3 @@ namespace HomeGenie.Automation.Engines
         ProgramError GetFormattedError(Exception e, bool isTriggerBlock);
     }
 }
-

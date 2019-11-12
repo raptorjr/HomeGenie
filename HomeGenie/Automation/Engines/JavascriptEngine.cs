@@ -21,18 +21,20 @@
  */
 
 using System;
-using HomeGenie.Automation.Scripting;
+using System.Collections.Generic;
 
 using Jint;
-using System.Collections.Generic;
 using Jint.Parser;
+
+using HomeGenie.Automation.Scripting;
 
 namespace HomeGenie.Automation.Engines
 {
     public class JavascriptEngine : ProgramEngineBase, IProgramEngine
     {
-        internal Engine scriptEngine;
+        private Engine scriptEngine;
         private ScriptingHost hgScriptingHost;
+
         private string initScript = @"var $$ = {
           // ModulesManager
           modules: hg.modules,
@@ -77,26 +79,27 @@ namespace HomeGenie.Automation.Engines
         {
             Unload();
 
-            if (homegenie == null)
+            if (HomeGenie == null)
                 return false;
 
             scriptEngine = new Engine();
 
             hgScriptingHost = new ScriptingHost();
-            hgScriptingHost.SetHost(homegenie, programBlock.Address);
+            hgScriptingHost.SetHost(HomeGenie, ProgramBlock.Address);
             scriptEngine.SetValue("hg", hgScriptingHost);
             return true;
         }
-        public MethodRunResult EvaluateCondition()
+
+        public override MethodRunResult Setup()
         {
             MethodRunResult result = null;
-            string jsScript = initScript + programBlock.ScriptCondition;
+            string jsScript = initScript + ProgramBlock.ScriptSetup;
             result = new MethodRunResult();
             try
             {
                 var sh = (scriptEngine.GetValue("hg").ToObject() as ScriptingHost);
                 scriptEngine.Execute(jsScript);
-                result.ReturnValue = sh.executeProgramCode || programBlock.WillRun;
+                result.ReturnValue = sh.ExecuteProgramCode || ProgramBlock.WillRun;
             }
             catch (Exception e)
             {
@@ -105,10 +108,10 @@ namespace HomeGenie.Automation.Engines
             return result;
         }
 
-        public MethodRunResult Run(string options)
+        public override MethodRunResult Run(string options)
         {
             MethodRunResult result = null;
-            var jsScript = initScript + programBlock.ScriptSource;
+            var jsScript = initScript + ProgramBlock.ScriptSource;
             //scriptEngine.Options.AllowClr(false);
             result = new MethodRunResult();
             try
@@ -124,32 +127,30 @@ namespace HomeGenie.Automation.Engines
 
         public void Reset()
         {
-            if (hgScriptingHost != null)
-                hgScriptingHost.Reset();
+            if (hgScriptingHost != null) hgScriptingHost.Reset();
         }
 
-        public ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
+        public override ProgramError GetFormattedError(Exception e, bool isTriggerBlock)
         {
-            ProgramError error = new ProgramError() {
-                CodeBlock = isTriggerBlock ? "TC" : "CR",
+            ProgramError error = new ProgramError()
+            {
+                CodeBlock = isTriggerBlock ? CodeBlockEnum.TC : CodeBlockEnum.CR,
                 Column = 0,
                 Line = 0,
                 ErrorNumber = "-1",
                 ErrorMessage = e.Message
             };
-
             return error;
         }
 
-        public List<ProgramError> Compile()
+        public override List<ProgramError> Compile()
         {
             List<ProgramError> errors = new List<ProgramError>();
-
             JavaScriptParser jp = new JavaScriptParser(false);
             //ParserOptions po = new ParserOptions();
             try
             {
-                jp.Parse(programBlock.ScriptCondition);
+                jp.Parse(ProgramBlock.ScriptSetup);
             }
             catch (Exception e)
             {
@@ -160,11 +161,12 @@ namespace HomeGenie.Automation.Engines
                     string message = error[1];
                     if (message != "hg is not defined") // TODO: find a better solution for this
                     {
-                        int line = int.Parse(error[0].Split(' ')[1]);
-                        errors.Add(new ProgramError() {
+                        int line = Int32.Parse(error[0].Split(' ')[1]);
+                        errors.Add(new ProgramError()
+                        {
                             Line = line,
                             ErrorMessage = message,
-                            CodeBlock = "TC"
+                            CodeBlock = CodeBlockEnum.TC
                         });
                     }
                 }
@@ -172,30 +174,25 @@ namespace HomeGenie.Automation.Engines
             //
             try
             {
-                jp.Parse(programBlock.ScriptSource);
+                jp.Parse(ProgramBlock.ScriptSource);
             }
             catch (Exception e)
             {
                 // TODO: parse error message
-                if (e.Message.Contains(":"))
+                if (!e.Message.Contains(":")) return errors;
+                string[] error = e.Message.Split(':');
+                string message = error[1];
+                // TODO: find a better solution for this "hg is not defined" check
+                if (message == "hg is not defined") return errors;
+                int line = Int32.Parse(error[0].Split(' ')[1]);
+                errors.Add(new ProgramError()
                 {
-                    string[] error = e.Message.Split(':');
-                    string message = error[1];
-                    if (message != "hg is not defined") // TODO: find a better solution for this
-                    {
-                        int line = int.Parse(error[0].Split(' ')[1]);
-                        errors.Add(new ProgramError() {
-                            Line = line,
-                            ErrorMessage = message,
-                            CodeBlock = "CR"
-                        });
-                    }
-                }
+                    Line = line,
+                    ErrorMessage = message,
+                    CodeBlock = CodeBlockEnum.CR
+                });
             }
-
             return errors;
         }
-
     }
 }
-

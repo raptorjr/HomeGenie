@@ -5,14 +5,18 @@
 [Rr]eleases/
 [Bb]in/
 [Oo]bj/
+*/Packager/Output/
 
 # Temporary and local IDE/System files
 *.userprefs
 *.suo
 *.pidb
 Thumbs.db
-.idea
+**/.idea/*
+**/*.DotSettings.user
 
 # Nuget packages
-packages/
-!packages/repositories.config
+**/packages/*
+!**/packages/repositories.config
+
+HomeGenie_Windows/\.vs/

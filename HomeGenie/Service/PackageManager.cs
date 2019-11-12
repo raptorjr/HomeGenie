@@ -25,8 +25,6 @@ using System.IO;
 using System.Net;
 using System.Xml.Serialization;
 using System.Collections.Generic;
-using System.Security.Cryptography.X509Certificates;
-using System.Net.Security;
 
 using HomeGenie.Automation;
 using HomeGenie.Data;
@@ -66,7 +64,7 @@ namespace HomeGenie.Service
                 Properties.InstallProgressMessage,
                 "= Downloading: package.json"
             );
-            using (var client = new WebClient())
+            using (var client = new WebClientPx())
             {
                 try
                 {
@@ -105,7 +103,7 @@ namespace HomeGenie.Service
                     string programFile = Path.Combine(installFolder, program.file.ToString());
                     if (File.Exists(programFile))
                         File.Delete(programFile);
-                    using (var client = new WebClient())
+                    using (var client = new WebClientPx())
                     {
                         try
                         {
@@ -135,7 +133,9 @@ namespace HomeGenie.Service
                             Properties.InstallProgressMessage,
                             "= Installing: " + program.name.ToString()
                         );
-                        int pid = int.Parse(program.uid.ToString());
+                        int pid = homegenie.ProgramManager.GeneratePid();
+                        if (program.uid == null || !int.TryParse(program.uid.ToString(), out pid))
+                            program.uid = pid;
                         // by default enable package programs after installing them
                         var enabled = true;
                         var oldProgram = homegenie.ProgramManager.ProgramGet(pid);
@@ -199,7 +199,7 @@ namespace HomeGenie.Service
                     string widgetFile = Path.Combine(installFolder, widget.file.ToString());
                     if (File.Exists(widgetFile))
                         File.Delete(widgetFile);
-                    using (var client = new WebClient())
+                    using (var client = new WebClientPx())
                     {
                         try
                         {
@@ -251,7 +251,7 @@ namespace HomeGenie.Service
                     string migfaceFile = Path.Combine(installFolder, migface.file.ToString());
                     if (File.Exists(migfaceFile))
                         File.Delete(migfaceFile);
-                    using (var client = new WebClient())
+                    using (var client = new WebClientPx())
                     {
                         try
                         {
@@ -428,10 +428,11 @@ namespace HomeGenie.Service
         public ProgramBlock ProgramImport(int newPid, string archiveName, string groupName)
         {
             ProgramBlock newProgram;
-            var reader = new StreamReader(archiveName);
             char[] signature = new char[2];
-            reader.Read(signature, 0, 2);
-            reader.Close();
+            using (var reader = new StreamReader(archiveName))
+            {
+                reader.Read(signature, 0, 2);
+            }
             if (signature[0] == 'P' && signature[1] == 'K')
             {
                 // Read and uncompress zip file content (arduino program bundle)
@@ -449,16 +450,17 @@ namespace HomeGenie.Service
                 if (!Directory.Exists(Path.Combine("programs", "arduino")))
                     Directory.CreateDirectory(Path.Combine("programs", "arduino"));
                 Directory.Move(Path.Combine(destFolder, "src"), bundleFolder);
-                reader = new StreamReader(Path.Combine(destFolder, "program.hgx"));
+                archiveName = Path.Combine(destFolder, "program.hgx");
             }
-            else
+            
+            // TODO: Deprecate Compat
+            Compat_526.FixProgramsDatabase(archiveName);
+            
+            using (var reader = new StreamReader(archiveName))
             {
-                reader = new StreamReader(archiveName);
+                var serializer = new XmlSerializer(typeof(ProgramBlock));
+                newProgram = (ProgramBlock)serializer.Deserialize(reader);
             }
-            var serializer = new XmlSerializer(typeof(ProgramBlock));
-            newProgram = (ProgramBlock)serializer.Deserialize(reader);
-            reader.Close();
-
             newProgram.Address = newPid;
             newProgram.Group = groupName;
             homegenie.ProgramManager.ProgramAdd(newProgram);
@@ -503,9 +505,16 @@ namespace HomeGenie.Service
                     File.Delete(logoPath);
                 }
                 File.Move(Path.Combine(sourceFolder, "logo.png"), logoPath);
-                // copy other interface files to mig folder (dll and dependencies)
+                // copy other interface files to mig folder (files and subfolders)
                 string migFolder = Path.Combine("lib", "mig");
                 DirectoryInfo dir = new DirectoryInfo(sourceFolder);
+                // copy folders
+                foreach (var d in dir.GetDirectories())
+                {
+                    string destFile = Path.Combine(migFolder, Path.GetFileName(d.FullName));
+                    File.Move(d.FullName, destFile);
+                }
+                // copy root files ("soft" copy to prevent I/O errors overwriting in-use files)
                 foreach (var f in dir.GetFiles())
                 {
                     string destFile = Path.Combine(migFolder, Path.GetFileName(f.FullName));
@@ -533,4 +542,3 @@ namespace HomeGenie.Service
 
     }
 }
-

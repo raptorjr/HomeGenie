@@ -1,10 +1,12 @@
 ﻿using System;
-using HomeGenie.Service;
-using MIG;
-using HomeGenie.Automation.Scripting;
 using System.Threading;
 using System.IO;
 using System.Net;
+
+using MIG;
+
+using HomeGenie.Service;
+using HomeGenie.Automation.Scripting;
 
 namespace HomeGenie
 {
@@ -16,6 +18,16 @@ namespace HomeGenie
         {
             homegenie = hg;
         }
+
+        /// <summary>
+        /// Program title field (runtime variable)
+        /// </summary>
+        public string Title = "";
+        
+        /// <summary>
+        /// Program description field (runtime variable)
+        /// </summary>
+        public string Description = "";
 
         /// <summary>
         /// Gets the logger object.
@@ -159,7 +171,7 @@ namespace HomeGenie
             var program = homegenie.ProgramManager.Programs.Find(p => p.Address.ToString() == programId || p.Name == programId);
             if (program != null && !program.IsRunning) //  && program.Address != myProgramId
             {
-                homegenie.ProgramManager.Run(program, options);
+                program.Engine.StartProgram(options);
             }
         }
 
